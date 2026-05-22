@@ -1,0 +1,232 @@
+// Base Souffle declarations for facts emitted by tools/python_to_souffle.py
+// The corresponding input files are relation-name.facts under the directory
+// passed to souffle with -F.
+
+.decl module(module_name:symbol)
+.input module
+
+.decl module_file(module_name:symbol, relative_path:symbol)
+.input module_file
+
+.decl imports(module_name:symbol, imported_symbol:symbol)
+.input imports
+
+.decl defines_class(module_name:symbol, class_name:symbol)
+.input defines_class
+
+.decl extends(module_name:symbol, class_name:symbol, base_name:symbol)
+.input extends
+
+.decl dataclass(module_name:symbol, class_name:symbol, is_frozen:number, line:number)
+.input dataclass
+
+.decl dataclass_field(
+  module_name:symbol,
+  class_name:symbol,
+  field_name:symbol,
+  type_repr:symbol,
+  is_optional:number,
+  has_default:number,
+  default_kind:symbol,
+  position:number,
+  line:number
+)
+.input dataclass_field
+
+.decl dataclass_field_default_factory(
+  module_name:symbol,
+  class_name:symbol,
+  field_name:symbol,
+  factory_name:symbol
+)
+.input dataclass_field_default_factory
+
+.decl dataclass_field_type_ref(
+  module_name:symbol,
+  class_name:symbol,
+  field_name:symbol,
+  type_ref:symbol
+)
+.input dataclass_field_type_ref
+
+.decl method_of_class(module_name:symbol, class_name:symbol, qualified_name:symbol)
+.input method_of_class
+
+.decl function_param(
+  module_name:symbol,
+  qualified_name:symbol,
+  param_name:symbol,
+  type_repr:symbol,
+  position:number,
+  line:number
+)
+.input function_param
+
+.decl function_param_type_ref(
+  module_name:symbol,
+  qualified_name:symbol,
+  param_name:symbol,
+  type_ref:symbol
+)
+.input function_param_type_ref
+
+.decl function_return_type(
+  module_name:symbol,
+  qualified_name:symbol,
+  type_repr:symbol,
+  line:number
+)
+.input function_return_type
+
+.decl function_return_type_ref(
+  module_name:symbol,
+  qualified_name:symbol,
+  type_ref:symbol
+)
+.input function_return_type_ref
+
+.decl returns_dataclass(
+  module_name:symbol,
+  qualified_name:symbol,
+  class_name:symbol,
+  line:number
+)
+.input returns_dataclass
+
+.decl attribute_read(
+  module_name:symbol,
+  qualified_name:symbol,
+  owner_name:symbol,
+  attribute_name:symbol,
+  line:number
+)
+.input attribute_read
+
+.decl attribute_write(
+  module_name:symbol,
+  qualified_name:symbol,
+  owner_name:symbol,
+  attribute_name:symbol,
+  line:number
+)
+.input attribute_write
+
+.decl handles_exception(
+  module_name:symbol,
+  qualified_name:symbol,
+  exception_type:symbol,
+  line:number
+)
+.input handles_exception
+
+.decl raises_exception(
+  module_name:symbol,
+  qualified_name:symbol,
+  exception_type:symbol,
+  line:number
+)
+.input raises_exception
+
+.decl defines_function(module_name:symbol, qualified_name:symbol, arity:number)
+.input defines_function
+
+.decl function_name(module_name:symbol, qualified_name:symbol, name:symbol)
+.input function_name
+
+.decl calls(module_name:symbol, caller:symbol, callee:symbol, line:number)
+.input calls
+
+.decl instantiates(module_name:symbol, caller:symbol, class_name:symbol, line:number)
+.input instantiates
+
+.decl reads_env_var(module_name:symbol, caller:symbol, env_var:symbol, line:number)
+.input reads_env_var
+
+.decl constructor_kwarg(
+  module_name:symbol,
+  qualified_name:symbol,
+  constructed_class:symbol,
+  arg_name:symbol,
+  source_expr:symbol,
+  line:number
+)
+.input constructor_kwarg
+
+.decl return_constructor_kwarg(
+  module_name:symbol,
+  qualified_name:symbol,
+  constructed_class:symbol,
+  arg_name:symbol,
+  source_expr:symbol,
+  line:number
+)
+.input return_constructor_kwarg
+
+.decl field_flows_to_constructor_arg(
+  module_name:symbol,
+  qualified_name:symbol,
+  source_param:symbol,
+  source_field:symbol,
+  constructed_class:symbol,
+  arg_name:symbol,
+  line:number
+)
+.input field_flows_to_constructor_arg
+
+.decl condition_reads_attribute(
+  module_name:symbol,
+  qualified_name:symbol,
+  owner_name:symbol,
+  attribute_name:symbol,
+  line:number
+)
+.input condition_reads_attribute
+
+.decl returns_none(module_name:symbol, qualified_name:symbol, line:number)
+.input returns_none
+
+.decl returns_literal(
+  module_name:symbol,
+  qualified_name:symbol,
+  literal_kind:symbol,
+  literal_value:symbol,
+  line:number
+)
+.input returns_literal
+
+.decl method_override(
+  module_name:symbol,
+  class_name:symbol,
+  base_name:symbol,
+  method_name:symbol,
+  qualified_name:symbol
+)
+.input method_override
+
+.decl local_depends_on_field(
+  module_name:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  source_param:symbol,
+  source_field:symbol,
+  line:number
+)
+.input local_depends_on_field
+
+.decl call_result_assigned(
+  module_name:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  callee_name:symbol,
+  line:number
+)
+.input call_result_assigned
+
+.decl local_dataclass_value(
+  module_name:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  class_name:symbol,
+  line:number
+)
+.input local_dataclass_value

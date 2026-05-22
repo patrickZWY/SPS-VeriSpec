@@ -15,16 +15,16 @@ The generic program is `rule_layer/dataclass_deduction_model.dl`.
 ## How to run it
 
 ```bash
-python3 tools/python_to_souffle.py CutePetsBoston --souffle-facts-dir /tmp/cutepets-facts
-mkdir -p /tmp/cutepets-deduction-out
-souffle -F /tmp/cutepets-facts -D /tmp/cutepets-deduction-out \
+python3 tools/python_to_souffle.py <python-project-dir> --souffle-facts-dir /tmp/project-facts
+mkdir -p /tmp/project-deduction-out
+souffle -F /tmp/project-facts -D /tmp/project-deduction-out \
   rule_layer/dataclass_deduction_model.dl
 ```
 
 Or run the whole pipeline:
 
 ```bash
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-run
+python3 tools/run_souffle_models.py <python-project-dir> --work-dir /tmp/project-run
 ```
 
 ## What this layer deduces
@@ -38,41 +38,35 @@ python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-run
 - required fields that never appear in any tracked field-read relation
 - dataclasses that participate in call or exception effects
 
-## Example output on CutePetsBoston
+## Example output shape
 
 Key direct transformations:
 
-- `AdoptablePet -> Post`
-- `Post -> PostResult`
-- `Post -> PreparedCaption`
-- `PreparedCaption -> CaptionThread`
-- `AdoptablePet -> PipelineResult`
+- `<DataclassA> -> <DataclassB>`
+- `<DataclassB> -> <DataclassC>`
+- `<DataclassC> -> <DataclassD>`
 
 Key reachable transformations:
 
-- `AdoptablePet => PostResult`
-- `AdoptablePet => PreparedCaption`
-- `AdoptablePet => CaptionThread`
-- `Post => CaptionThread`
+- `<DataclassA> => <DataclassC>`
+- `<DataclassA> => <DataclassD>`
+- `<DataclassB> => <DataclassD>`
 
 Topology deductions:
 
-- bridge dataclasses: `Post`, `PreparedCaption`
-- entry dataclass: `AdoptablePet`
-- terminal dataclasses: `PostResult`, `CaptionThread`, `PipelineResult`
+- bridge dataclasses: dataclasses with both incoming and outgoing transformation edges
+- entry dataclasses: dataclasses with outgoing but no incoming transformation edges
+- terminal dataclasses: dataclasses with incoming but no outgoing transformation edges
 
 Field-to-transformation deductions:
 
-- `AdoptablePet.name -> Post`
-- `AdoptablePet.breed -> Post`
-- `AdoptablePet.description -> Post`
-- `Post.text -> PreparedCaption`
-- `Post.tags -> PreparedCaption`
-- `PreparedCaption.caption_text -> CaptionThread`
+- `<DataclassA>.<field_name> -> <DataclassB>`
+- `<DataclassB>.<field_name> -> <DataclassC>`
+- `<DataclassC>.<field_name> -> <DataclassD>`
 
 Blind-spot deductions:
 
-- unread required fields currently include `PostResult.success`, `PreparedCaption.post`, and several preview/pipeline helper fields
+- unread required fields are emitted as `<Dataclass>.<field_name>` candidates for review
 
 ## Why this matters
 

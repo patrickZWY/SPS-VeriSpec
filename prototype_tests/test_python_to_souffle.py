@@ -148,6 +148,90 @@ class Poster:
             rendered,
         )
 
+    def test_extracts_local_field_dependencies_for_constructor_args(self) -> None:
+        facts = extract_facts_from_source(
+            """
+from dataclasses import dataclass
+
+@dataclass
+class Pet:
+    name: str
+    breed: str
+    image_url: str | None = None
+
+@dataclass
+class Post:
+    image_url: str | None = None
+    alt_text: str | None = None
+
+class Poster:
+    def format_post(self, pet: Pet) -> Post:
+        url = pet.image_url
+        alt = f"Photo of {pet.name}, a {pet.breed}"
+        return Post(image_url=url, alt_text=alt)
+            """.strip(),
+            module_name="sample",
+        )
+        rendered = {fact.render() for fact in facts}
+
+        self.assertIn(
+            'local_depends_on_field("sample", "Poster.format_post", "url", "pet", "image_url", 16).',
+            rendered,
+        )
+        self.assertIn(
+            'local_depends_on_field("sample", "Poster.format_post", "alt", "pet", "name", 17).',
+            rendered,
+        )
+        self.assertIn(
+            'field_flows_to_constructor_arg("sample", "Poster.format_post", "pet", "image_url", "Post", "image_url", 18).',
+            rendered,
+        )
+        self.assertIn(
+            'field_flows_to_constructor_arg("sample", "Poster.format_post", "pet", "name", "Post", "alt_text", 18).',
+            rendered,
+        )
+        self.assertIn(
+            'field_flows_to_constructor_arg("sample", "Poster.format_post", "pet", "breed", "Post", "alt_text", 18).',
+            rendered,
+        )
+
+    def test_extracts_call_result_assignment_for_inferred_reads(self) -> None:
+        facts = extract_facts_from_source(
+            """
+from dataclasses import dataclass
+
+@dataclass
+class Post:
+    text: str
+
+@dataclass
+class PostResult:
+    success: bool
+
+class Poster:
+    def publish(self, post: Post) -> PostResult:
+        return PostResult(success=True)
+
+def run(poster: Poster, post: Post):
+    result = poster.publish(post)
+    if not result.success:
+        return None
+    return result
+            """.strip(),
+            module_name="sample",
+        )
+        rendered = {fact.render() for fact in facts}
+
+        self.assertIn(
+            'call_result_assigned("sample", "run", "result", "publish", 16).',
+            rendered,
+        )
+        self.assertIn(
+            'attribute_read("sample", "run", "result", "success", 17).',
+            rendered,
+        )
+        self.assertIn('returns_none("sample", "run", 18).', rendered)
+
 
 class ExtractFactsFromProjectTests(unittest.TestCase):
     def test_extracts_main_module_facts_from_cutepetsboston(self) -> None:

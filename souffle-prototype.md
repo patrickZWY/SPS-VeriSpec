@@ -21,9 +21,18 @@ The extractor emits Souffle-compatible base facts for:
 - dataclass field default factories
 - dataclass field type references
 - function and method definitions
+- function names split from qualified names
 - function calls
 - class instantiations
 - environment variable reads
+- constructor keyword arguments
+- direct and local-derived field-to-constructor-argument flows
+- local variable dependencies on dataclass fields
+- call-result assignments
+- local dataclass value assignments
+- condition attribute reads
+- literal and `None` returns
+- syntactic method override candidates
 
 By default it skips `tests/` and `manual_testing/` so the initial model stays
 focused on application code.
@@ -135,6 +144,40 @@ Useful outputs:
 - `unread_required_field.csv`
 - `effectful_dataclass.csv`
 
+## Generic dataclass test-target modeling
+
+After schema, effect, and deduction, the next generic layer is test-target
+modeling:
+
+```bash
+mkdir -p /tmp/project-test-out
+souffle -F /tmp/project-facts -D /tmp/project-test-out \
+  rule_layer/dataclass_test_model.dl
+```
+
+This layer derives relations intended to drive tests and design review:
+
+- mutable versus frozen dataclasses
+- optional and required field test targets
+- frozen dataclasses that still contain mutable factory-backed fields
+- class methods that accept, return, or construct dataclasses
+- method-level dataclass transformations
+- field-to-constructor-argument mappings
+- local dependency mappings through aliases and composed expressions
+- optional fields read in branch conditions
+- dataclass contracts inherited or overridden by subclasses
+
+Useful outputs:
+
+- `class_method_uses_dataclass.csv`
+- `method_dataclass_transform.csv`
+- `method_field_to_constructor_arg.csv`
+- `transform_optional_field_test_target.csv`
+- `transform_required_field_test_target.csv`
+- `optional_field_read_in_condition.csv`
+- `frozen_contains_mutable_field.csv`
+- `override_dataclass_contract.csv`
+
 ## One-command runner
 
 There is also a generic runner:
@@ -143,8 +186,8 @@ There is also a generic runner:
 python3 tools/run_souffle_models.py <python-project> --work-dir /tmp/project-run
 ```
 
-This executes extraction plus the schema, effect, and deduction models, then
-writes a Markdown summary to:
+This executes extraction plus the schema, effect, deduction, and test-target
+models, then writes a Markdown summary to:
 
 ```text
 /tmp/project-run/summary.md
@@ -166,6 +209,10 @@ souffle -F /tmp/cutepets-facts -D /tmp/cutepets-effect-out \
 mkdir -p /tmp/cutepets-deduction-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-deduction-out \
   rule_layer/dataclass_deduction_model.dl
+
+mkdir -p /tmp/cutepets-test-out
+souffle -F /tmp/cutepets-facts -D /tmp/cutepets-test-out \
+  rule_layer/dataclass_test_model.dl
 
 python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-run
 ```
@@ -194,6 +241,10 @@ souffle -F /tmp/cutepets-facts -D /tmp/cutepets-effect-out \
 mkdir -p /tmp/cutepets-deduction-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-deduction-out \
   rule_layer/dataclass_deduction_model.dl
+
+mkdir -p /tmp/cutepets-test-out
+souffle -F /tmp/cutepets-facts -D /tmp/cutepets-test-out \
+  rule_layer/dataclass_test_model.dl
 
 python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-run
 ```

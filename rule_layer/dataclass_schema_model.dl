@@ -1,0 +1,99 @@
+// Generic Souffle program for dataclass-first modeling.
+// Generate facts with:
+// python3 tools/python_to_souffle.py <python-project> --souffle-facts-dir /tmp/project-facts
+// Then run:
+// mkdir -p /tmp/project-out
+// souffle -F /tmp/project-facts -D /tmp/project-out rule_layer/dataclass_schema_model.dl
+
+.include "rule_layer/base_facts.dl"
+
+.type FieldShape = [
+  field_name:symbol,
+  type_repr:symbol,
+  is_optional:number,
+  has_default:number,
+  default_kind:symbol,
+  position:number
+]
+
+.type DataclassShape = [
+  field_count:number,
+  required_count:number,
+  optional_count:number,
+  defaulted_count:number,
+  factory_count:number,
+  frozen:number
+]
+
+.decl modeled_dataclass(module_name:symbol, class_name:symbol, is_frozen:number, line:number)
+.output modeled_dataclass
+
+.decl dataclass_field_shape(module_name:symbol, class_name:symbol, shape:FieldShape)
+.output dataclass_field_shape
+
+.decl required_field(module_name:symbol, class_name:symbol, field_name:symbol)
+.output required_field
+
+.decl optional_field(module_name:symbol, class_name:symbol, field_name:symbol)
+.output optional_field
+
+.decl defaulted_field(module_name:symbol, class_name:symbol, field_name:symbol, default_kind:symbol)
+.output defaulted_field
+
+.decl factory_backed_field(module_name:symbol, class_name:symbol, field_name:symbol, factory_name:symbol)
+.output factory_backed_field
+
+.decl dataclass_dependency(module_name:symbol, class_name:symbol, field_name:symbol, target_class:symbol)
+.output dataclass_dependency
+
+.decl dataclass_shape(module_name:symbol, class_name:symbol, shape:DataclassShape)
+.output dataclass_shape
+
+modeled_dataclass(Module, Class, Frozen, Line) :-
+  dataclass(Module, Class, Frozen, Line).
+
+dataclass_field_shape(
+  Module,
+  Class,
+  [FieldName, TypeRepr, IsOptional, HasDefault, DefaultKind, Position]
+) :-
+  dataclass_field(
+    Module,
+    Class,
+    FieldName,
+    TypeRepr,
+    IsOptional,
+    HasDefault,
+    DefaultKind,
+    Position,
+    _
+  ).
+
+required_field(Module, Class, FieldName) :-
+  dataclass_field(Module, Class, FieldName, _, 0, 0, _, _, _).
+
+optional_field(Module, Class, FieldName) :-
+  dataclass_field(Module, Class, FieldName, _, 1, _, _, _, _).
+
+defaulted_field(Module, Class, FieldName, DefaultKind) :-
+  dataclass_field(Module, Class, FieldName, _, _, 1, DefaultKind, _, _).
+
+factory_backed_field(Module, Class, FieldName, FactoryName) :-
+  dataclass_field_default_factory(Module, Class, FieldName, FactoryName).
+
+dataclass_dependency(Module, Class, FieldName, TargetClass) :-
+  dataclass_field_type_ref(Module, Class, FieldName, TargetClass),
+  dataclass(_, TargetClass, _, _),
+  Class != TargetClass.
+
+dataclass_shape(
+  Module,
+  Class,
+  [FieldCount, RequiredCount, OptionalCount, DefaultedCount, FactoryCount, Frozen]
+) :-
+  dataclass(Module, Class, Frozen, _),
+  FieldCount = count : { dataclass_field(Module, Class, _, _, _, _, _, _, _) },
+  RequiredCount = count : { dataclass_field(Module, Class, _, _, 0, 0, _, _, _) },
+  OptionalCount = count : { dataclass_field(Module, Class, _, _, 1, _, _, _, _) },
+  DefaultedCount = count : { dataclass_field(Module, Class, _, _, _, 1, _, _, _) },
+  FactoryCount = count : { dataclass_field_default_factory(Module, Class, _, _) }.

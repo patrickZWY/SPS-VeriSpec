@@ -1,0 +1,105 @@
+// Generic Souffle program that associates discovered dataclasses with effects
+// in surrounding functions and methods.
+//
+// Generate facts with:
+// python3 tools/python_to_souffle.py <python-project> --souffle-facts-dir /tmp/project-facts
+//
+// Then run:
+// mkdir -p /tmp/project-effect-out
+// souffle -F /tmp/project-facts -D /tmp/project-effect-out rule_layer/dataclass_effect_model.dl
+
+.include "rule_layer/base_facts.dl"
+
+.type FunctionLink = [
+  relation_kind:symbol,
+  evidence:symbol
+]
+
+.type EffectEvent = [
+  effect_kind:symbol,
+  detail:symbol,
+  line:number
+]
+
+.type FieldEvent = [
+  access_kind:symbol,
+  field_name:symbol,
+  line:number
+]
+
+.decl dataclass_function(module_name:symbol, class_name:symbol, qualified_name:symbol, link:FunctionLink)
+.output dataclass_function
+
+.decl dataclass_field_effect(module_name:symbol, class_name:symbol, qualified_name:symbol, field_event:FieldEvent)
+.output dataclass_field_effect
+
+.decl dataclass_effect(module_name:symbol, class_name:symbol, qualified_name:symbol, effect:EffectEvent)
+.output dataclass_effect
+
+.decl dataclass_transformation(module_name:symbol, source_class:symbol, target_class:symbol, qualified_name:symbol)
+.output dataclass_transformation
+
+dataclass_function(Module, Class, QualifiedName, ["param_type", ParamName]) :-
+  function_param_type_ref(Module, QualifiedName, ParamName, Class),
+  dataclass(_, Class, _, _).
+
+dataclass_function(Module, Class, QualifiedName, ["return_type", Class]) :-
+  function_return_type_ref(Module, QualifiedName, Class),
+  dataclass(_, Class, _, _).
+
+dataclass_function(Module, Class, QualifiedName, ["returns_constructor", Class]) :-
+  returns_dataclass(Module, QualifiedName, Class, _),
+  dataclass(_, Class, _, _).
+
+dataclass_function(Module, Class, QualifiedName, ["constructs", Class]) :-
+  instantiates(Module, QualifiedName, Class, _),
+  dataclass(_, Class, _, _).
+
+dataclass_field_effect(Module, Class, QualifiedName, ["read", FieldName, Line]) :-
+  function_param_type_ref(Module, QualifiedName, ParamName, Class),
+  attribute_read(Module, QualifiedName, ParamName, FieldName, Line),
+  dataclass_field(_, Class, FieldName, _, _, _, _, _, _).
+
+dataclass_field_effect(Module, Class, QualifiedName, ["write", FieldName, Line]) :-
+  function_param_type_ref(Module, QualifiedName, ParamName, Class),
+  attribute_write(Module, QualifiedName, ParamName, FieldName, Line),
+  dataclass_field(_, Class, FieldName, _, _, _, _, _, _).
+
+dataclass_effect(Module, Class, QualifiedName, ["call", Callee, Line]) :-
+  dataclass_function(Module, Class, QualifiedName, _),
+  calls(Module, QualifiedName, Callee, Line).
+
+dataclass_effect(Module, Class, QualifiedName, ["env_read", EnvVar, Line]) :-
+  dataclass_function(Module, Class, QualifiedName, _),
+  reads_env_var(Module, QualifiedName, EnvVar, Line).
+
+dataclass_effect(Module, Class, QualifiedName, ["handles_exception", ExceptionType, Line]) :-
+  dataclass_function(Module, Class, QualifiedName, _),
+  handles_exception(Module, QualifiedName, ExceptionType, Line).
+
+dataclass_effect(Module, Class, QualifiedName, ["raises_exception", ExceptionType, Line]) :-
+  dataclass_function(Module, Class, QualifiedName, _),
+  raises_exception(Module, QualifiedName, ExceptionType, Line).
+
+dataclass_effect(Module, Class, QualifiedName, ["returns_dataclass", ReturnedClass, Line]) :-
+  dataclass_function(Module, Class, QualifiedName, _),
+  returns_dataclass(Module, QualifiedName, ReturnedClass, Line).
+
+dataclass_effect(Module, Class, QualifiedName, ["constructs_dataclass", ConstructedClass, Line]) :-
+  dataclass_function(Module, Class, QualifiedName, _),
+  instantiates(Module, QualifiedName, ConstructedClass, Line),
+  dataclass(_, ConstructedClass, _, _).
+
+dataclass_transformation(Module, SourceClass, TargetClass, QualifiedName) :-
+  function_param_type_ref(Module, QualifiedName, _, SourceClass),
+  function_return_type_ref(Module, QualifiedName, TargetClass),
+  dataclass(_, SourceClass, _, _),
+  dataclass(_, TargetClass, _, _),
+  SourceClass != TargetClass.
+
+dataclass_transformation(Module, SourceClass, TargetClass, QualifiedName) :-
+  function_param_type_ref(Module, QualifiedName, _, SourceClass),
+  returns_dataclass(Module, QualifiedName, TargetClass, _),
+  dataclass(_, SourceClass, _, _),
+  dataclass(_, TargetClass, _, _),
+  SourceClass != TargetClass.

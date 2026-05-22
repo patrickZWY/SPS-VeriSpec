@@ -60,9 +60,20 @@ The extractor currently emits these relevant predicates:
 - `handles_exception(Module, QualifiedName, ExceptionType, LineNumber)`
 - `raises_exception(Module, QualifiedName, ExceptionType, LineNumber)`
 - `defines_function(Module, QualifiedName, Arity)`
+- `function_name(Module, QualifiedName, Name)`
 - `calls(Module, CallerQualifiedName, CalleeName, LineNumber)`
 - `instantiates(Module, CallerQualifiedName, ClassName, LineNumber)`
 - `reads_env_var(Module, CallerQualifiedName, EnvVarName, LineNumber)`
+- `constructor_kwarg(Module, QualifiedName, ConstructedClass, ArgName, SourceExpr, LineNumber)`
+- `return_constructor_kwarg(Module, QualifiedName, ConstructedClass, ArgName, SourceExpr, LineNumber)`
+- `field_flows_to_constructor_arg(Module, QualifiedName, SourceParam, SourceField, ConstructedClass, ArgName, LineNumber)`
+- `condition_reads_attribute(Module, QualifiedName, OwnerName, AttributeName, LineNumber)`
+- `returns_none(Module, QualifiedName, LineNumber)`
+- `returns_literal(Module, QualifiedName, LiteralKind, LiteralValue, LineNumber)`
+- `method_override(Module, ClassName, BaseName, MethodName, QualifiedName)`
+- `local_depends_on_field(Module, QualifiedName, LocalName, SourceParam, SourceField, LineNumber)`
+- `call_result_assigned(Module, QualifiedName, LocalName, CalleeName, LineNumber)`
+- `local_dataclass_value(Module, QualifiedName, LocalName, ClassName, LineNumber)`
 
 The model should assume:
 
@@ -83,6 +94,7 @@ The model should assume:
    - mutable versus frozen dataclass summaries
 4. Then connect functions or methods to the dataclass layer through typed parameters, typed returns, constructor sites, field reads/writes, and exception effects.
 5. Then use Souffle deduction to surface hidden relations such as reachable transformations, bridge dataclasses, field-to-transformation links, and unread required fields.
+6. Then derive test-generation targets from class/dataclass roles, method-level transformations, field-to-constructor-argument flows, optional-field branches, mutability, and override contracts.
 
 ## Prompt template for dataclass modeling
 
@@ -117,9 +129,20 @@ Base predicates:
 - handles_exception(Module, QualifiedName, ExceptionType, LineNumber)
 - raises_exception(Module, QualifiedName, ExceptionType, LineNumber)
 - defines_function(Module, QualifiedName, Arity)
+- function_name(Module, QualifiedName, Name)
 - calls(Module, CallerQualifiedName, CalleeName, LineNumber)
 - instantiates(Module, CallerQualifiedName, ClassName, LineNumber)
 - reads_env_var(Module, CallerQualifiedName, EnvVarName, LineNumber)
+- constructor_kwarg(Module, QualifiedName, ConstructedClass, ArgName, SourceExpr, LineNumber)
+- return_constructor_kwarg(Module, QualifiedName, ConstructedClass, ArgName, SourceExpr, LineNumber)
+- field_flows_to_constructor_arg(Module, QualifiedName, SourceParam, SourceField, ConstructedClass, ArgName, LineNumber)
+- condition_reads_attribute(Module, QualifiedName, OwnerName, AttributeName, LineNumber)
+- returns_none(Module, QualifiedName, LineNumber)
+- returns_literal(Module, QualifiedName, LiteralKind, LiteralValue, LineNumber)
+- method_override(Module, ClassName, BaseName, MethodName, QualifiedName)
+- local_depends_on_field(Module, QualifiedName, LocalName, SourceParam, SourceField, LineNumber)
+- call_result_assigned(Module, QualifiedName, LocalName, CalleeName, LineNumber)
+- local_dataclass_value(Module, QualifiedName, LocalName, ClassName, LineNumber)
 
 Task:
 [INSERT CONCRETE MODELING GOAL]
@@ -152,6 +175,9 @@ A good answer typically does some of the following:
 - connects dataclasses to typed functions and methods
 - associates dataclasses with field-access, call, env-read, and exception effects
 - identifies dataclass-to-dataclass transformations
+- identifies field-to-constructor-argument mappings for concrete test targets
+- classifies classes by how their methods accept, return, or construct dataclasses
+- surfaces optional-field branches and override contracts
 - summarizes dataclasses without pretending to know runtime semantics
 
 ## Review checklist
@@ -168,7 +194,10 @@ Use this checklist before accepting an LLM-generated model:
 ## Minimum next-step extractor upgrades
 
 The current extractor already supports schema facts, typed function signatures,
-constructor returns, field access, and basic exception facts.
+constructor returns, constructor keyword arguments, direct and local-derived
+field-to-constructor argument flow, field access, condition field reads, literal
+returns, call-result assignment, local dataclass values, method override
+candidates, and basic exception facts.
 
 The next useful upgrades after this are:
 
@@ -177,6 +206,9 @@ The next useful upgrades after this are:
 - `calls_resolved(Module, QualifiedName, TargetModule, TargetQualifiedName, LineNumber)`
 - `writes_env_var(Module, QualifiedName, EnvVarName, LineNumber)`
 - `file_effect(Module, QualifiedName, EffectKind, PathHint, LineNumber)`
+- `resolved_extends(Module, ClassName, BaseModule, BaseName)`
+- `resolved_param_type_ref(Module, QualifiedName, ParamName, TypeModule, TypeName)`
+- `resolved_return_type_ref(Module, QualifiedName, TypeModule, TypeName)`
 
 The default should remain:
 model all dataclasses first, then connect code behavior to that schema only when needed.

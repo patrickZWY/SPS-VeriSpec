@@ -42,9 +42,42 @@ SOUFFLE_SCHEMA: dict[str, tuple[str, ...]] = {
     "handles_exception": ("symbol", "symbol", "symbol", "number"),
     "raises_exception": ("symbol", "symbol", "symbol", "number"),
     "defines_function": ("symbol", "symbol", "number"),
+    "function_name": ("symbol", "symbol", "symbol"),
     "calls": ("symbol", "symbol", "symbol", "number"),
     "instantiates": ("symbol", "symbol", "symbol", "number"),
     "reads_env_var": ("symbol", "symbol", "symbol", "number"),
+    "constructor_kwarg": ("symbol", "symbol", "symbol", "symbol", "symbol", "number"),
+    "return_constructor_kwarg": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
+    "field_flows_to_constructor_arg": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
+    "condition_reads_attribute": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "returns_none": ("symbol", "symbol", "number"),
+    "returns_literal": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "method_override": ("symbol", "symbol", "symbol", "symbol", "symbol"),
+    "local_depends_on_field": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
+    "call_result_assigned": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "local_dataclass_value": ("symbol", "symbol", "symbol", "symbol", "number"),
 }
 
 
@@ -94,6 +127,8 @@ class PythonFactExtractor(ast.NodeVisitor):
         self.module_name = module_name
         self.facts: set[Fact] = set()
         self._qualname_stack: list[str] = []
+        self._local_field_deps_stack: list[dict[str, set[tuple[str, str]]]] = []
+        self._local_dataclass_values_stack: list[dict[str, str]] = []
 
     def extract(self, tree: ast.AST, relative_path: str) -> list[Fact]:
         self.facts.add(Fact("module", (self.module_name,)))
@@ -173,6 +208,31 @@ class PythonFactExtractor(ast.NodeVisitor):
                         )
                     )
 
+        base_names = [
+            rendered_base
+            for base in node.bases
+            if (rendered_base := self._render_expr(base))
+        ]
+        method_names = [
+            stmt.name
+            for stmt in node.body
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        for base_name in base_names:
+            for method_name in method_names:
+                self.facts.add(
+                    Fact(
+                        "method_override",
+                        (
+                            self.module_name,
+                            class_name,
+                            base_name.split(".")[-1],
+                            method_name,
+                            f"{class_name}.{method_name}",
+                        ),
+                    )
+                )
+
         self.generic_visit(node)
         self._qualname_stack.pop()
 
@@ -195,6 +255,7 @@ class PythonFactExtractor(ast.NodeVisitor):
                         (self.module_name, caller, class_name, node.lineno),
                     )
                 )
+                self._add_constructor_kwarg_facts(caller, class_name, node)
 
         env_var = self._extract_env_var(node)
         if env_var:
@@ -212,6 +273,7 @@ class PythonFactExtractor(ast.NodeVisitor):
                 (self.module_name, qualname, self._function_arity(node.args)),
             )
         )
+        self.facts.add(Fact("function_name", (self.module_name, qualname, node.name)))
         if len(self._qualname_stack) >= 2:
             self.facts.add(
                 Fact(
@@ -288,7 +350,11 @@ class PythonFactExtractor(ast.NodeVisitor):
                         (self.module_name, qualname, type_ref),
                     )
                 )
+        self._local_field_deps_stack.append({})
+        self._local_dataclass_values_stack.append({})
         self.generic_visit(node)
+        self._local_dataclass_values_stack.pop()
+        self._local_field_deps_stack.pop()
         self._qualname_stack.pop()
 
     def _push_name(self, name: str) -> str:
@@ -341,6 +407,14 @@ class PythonFactExtractor(ast.NodeVisitor):
                 )
         self.generic_visit(node)
 
+    def visit_Assign(self, node: ast.Assign) -> None:
+        self._record_assignment_targets(node.targets, node.value, node.lineno)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        self._record_assignment_targets([node.target], node.value, node.lineno)
+        self.generic_visit(node)
+
     def visit_Return(self, node: ast.Return) -> None:
         caller = self._current_callable()
         if node.value is not None:
@@ -352,6 +426,38 @@ class PythonFactExtractor(ast.NodeVisitor):
                         (self.module_name, caller, class_name, node.lineno),
                     )
                 )
+                if isinstance(node.value, ast.Call):
+                    self._add_return_constructor_kwarg_facts(caller, class_name, node.value)
+            elif self._is_none_literal(node.value):
+                self.facts.add(Fact("returns_none", (self.module_name, caller, node.lineno)))
+            else:
+                literal = self._literal_return(node.value)
+                if literal:
+                    literal_kind, literal_value = literal
+                    self.facts.add(
+                        Fact(
+                            "returns_literal",
+                            (
+                                self.module_name,
+                                caller,
+                                literal_kind,
+                                literal_value,
+                                node.lineno,
+                            ),
+                        )
+                    )
+        self.generic_visit(node)
+
+    def visit_If(self, node: ast.If) -> None:
+        self._add_condition_read_facts(node.test)
+        self.generic_visit(node)
+
+    def visit_IfExp(self, node: ast.IfExp) -> None:
+        self._add_condition_read_facts(node.test)
+        self.generic_visit(node)
+
+    def visit_While(self, node: ast.While) -> None:
+        self._add_condition_read_facts(node.test)
         self.generic_visit(node)
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
@@ -527,6 +633,233 @@ class PythonFactExtractor(ast.NodeVisitor):
     def _returned_class_name(self, node: ast.AST) -> str | None:
         if isinstance(node, ast.Call):
             return self._class_like_name(self._render_expr(node.func) or "")
+        return None
+
+    def _add_constructor_kwarg_facts(
+        self,
+        caller: str,
+        class_name: str,
+        node: ast.Call,
+    ) -> None:
+        for keyword in node.keywords:
+            if keyword.arg is None:
+                continue
+            source_expr = self._expression_repr(keyword.value)
+            self.facts.add(
+                Fact(
+                    "constructor_kwarg",
+                    (
+                        self.module_name,
+                        caller,
+                        class_name,
+                        keyword.arg,
+                        source_expr,
+                        keyword.value.lineno,
+                    ),
+                )
+            )
+            field_flow = self._direct_attribute_flow(keyword.value)
+            if field_flow:
+                source_param, source_field = field_flow
+                self.facts.add(
+                    Fact(
+                        "field_flows_to_constructor_arg",
+                        (
+                            self.module_name,
+                            caller,
+                            source_param,
+                            source_field,
+                            class_name,
+                            keyword.arg,
+                            keyword.value.lineno,
+                        ),
+                    )
+                )
+            for source_param, source_field in sorted(
+                self._expression_field_deps(keyword.value)
+            ):
+                self.facts.add(
+                    Fact(
+                        "field_flows_to_constructor_arg",
+                        (
+                            self.module_name,
+                            caller,
+                            source_param,
+                            source_field,
+                            class_name,
+                            keyword.arg,
+                            keyword.value.lineno,
+                        ),
+                    )
+                )
+
+    def _add_return_constructor_kwarg_facts(
+        self,
+        caller: str,
+        class_name: str,
+        node: ast.Call,
+    ) -> None:
+        for keyword in node.keywords:
+            if keyword.arg is None:
+                continue
+            self.facts.add(
+                Fact(
+                    "return_constructor_kwarg",
+                    (
+                        self.module_name,
+                        caller,
+                        class_name,
+                        keyword.arg,
+                        self._expression_repr(keyword.value),
+                        keyword.value.lineno,
+                    ),
+                )
+            )
+
+    def _add_condition_read_facts(self, node: ast.AST) -> None:
+        caller = self._current_callable()
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Attribute):
+                continue
+            owner = self._render_expr(child.value)
+            if owner:
+                self.facts.add(
+                    Fact(
+                        "condition_reads_attribute",
+                        (self.module_name, caller, owner, child.attr, child.lineno),
+                    )
+                )
+
+    def _expression_repr(self, node: ast.AST) -> str:
+        try:
+            return ast.unparse(node)
+        except Exception:
+            return self._render_expr(node) or "<expr>"
+
+    def _direct_attribute_flow(self, node: ast.AST) -> tuple[str, str] | None:
+        if not isinstance(node, ast.Attribute):
+            return None
+        if not isinstance(node.value, ast.Name):
+            return None
+        return node.value.id, node.attr
+
+    def _record_assignment_targets(
+        self,
+        targets: list[ast.AST],
+        value: ast.AST | None,
+        line: int,
+    ) -> None:
+        if not self._local_field_deps_stack:
+            return
+        if value is None:
+            return
+
+        caller = self._current_callable()
+        field_deps = self._expression_field_deps(value)
+        constructed_class = self._returned_class_name(value)
+        callee = self._render_expr(value.func) if isinstance(value, ast.Call) else None
+        callee_name = callee.split(".")[-1] if callee else None
+
+        for target in targets:
+            for local_name in self._iter_assignment_target_names(target):
+                if field_deps:
+                    self._set_local_field_deps(local_name, field_deps)
+                    for source_param, source_field in sorted(field_deps):
+                        self.facts.add(
+                            Fact(
+                                "local_depends_on_field",
+                                (
+                                    self.module_name,
+                                    caller,
+                                    local_name,
+                                    source_param,
+                                    source_field,
+                                    line,
+                                ),
+                            )
+                        )
+
+                if constructed_class:
+                    self._set_local_dataclass_value(local_name, constructed_class)
+                    self.facts.add(
+                        Fact(
+                            "local_dataclass_value",
+                            (
+                                self.module_name,
+                                caller,
+                                local_name,
+                                constructed_class,
+                                line,
+                            ),
+                        )
+                    )
+
+                if callee_name:
+                    self.facts.add(
+                        Fact(
+                            "call_result_assigned",
+                            (self.module_name, caller, local_name, callee_name, line),
+                        )
+                    )
+
+    def _iter_assignment_target_names(self, node: ast.AST) -> Iterable[str]:
+        if isinstance(node, ast.Name):
+            yield node.id
+            return
+        if isinstance(node, (ast.Tuple, ast.List)):
+            for element in node.elts:
+                yield from self._iter_assignment_target_names(element)
+
+    def _expression_field_deps(self, node: ast.AST) -> set[tuple[str, str]]:
+        deps: set[tuple[str, str]] = set()
+        if isinstance(node, ast.Name):
+            deps.update(self._get_local_field_deps(node.id))
+            return deps
+
+        for child in ast.walk(node):
+            if isinstance(child, ast.Attribute) and isinstance(child.value, ast.Name):
+                deps.add((child.value.id, child.attr))
+            elif isinstance(child, ast.Name):
+                deps.update(self._get_local_field_deps(child.id))
+        return deps
+
+    def _get_local_field_deps(self, local_name: str) -> set[tuple[str, str]]:
+        if not self._local_field_deps_stack:
+            return set()
+        return set(self._local_field_deps_stack[-1].get(local_name, set()))
+
+    def _set_local_field_deps(
+        self,
+        local_name: str,
+        field_deps: set[tuple[str, str]],
+    ) -> None:
+        if self._local_field_deps_stack:
+            self._local_field_deps_stack[-1][local_name] = set(field_deps)
+
+    def _set_local_dataclass_value(self, local_name: str, class_name: str) -> None:
+        if self._local_dataclass_values_stack:
+            self._local_dataclass_values_stack[-1][local_name] = class_name
+
+    @staticmethod
+    def _is_none_literal(node: ast.AST) -> bool:
+        return isinstance(node, ast.Constant) and node.value is None
+
+    def _literal_return(self, node: ast.AST) -> tuple[str, str] | None:
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, bool):
+                return "bool", str(node.value)
+            if isinstance(node.value, str):
+                return "str", node.value
+            if isinstance(node.value, int | float):
+                return "number", str(node.value)
+        if isinstance(node, ast.List):
+            return "list", self._expression_repr(node)
+        if isinstance(node, ast.Tuple):
+            return "tuple", self._expression_repr(node)
+        if isinstance(node, ast.Dict):
+            return "dict", self._expression_repr(node)
+        if isinstance(node, ast.Set):
+            return "set", self._expression_repr(node)
         return None
 
 

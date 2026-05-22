@@ -29,37 +29,31 @@ loosely related predicates.
 ## How to run it
 
 ```bash
-python3 tools/python_to_souffle.py CutePetsBoston --souffle-facts-dir /tmp/cutepets-facts
-mkdir -p /tmp/cutepets-dataclass-out
-souffle -F /tmp/cutepets-facts -D /tmp/cutepets-dataclass-out \
+python3 tools/python_to_souffle.py <python-project-dir> --souffle-facts-dir /tmp/project-facts
+mkdir -p /tmp/project-dataclass-out
+souffle -F /tmp/project-facts -D /tmp/project-dataclass-out \
   rule_layer/dataclass_schema_model.dl
 ```
 
 Useful output files:
 
-- `/tmp/cutepets-dataclass-out/modeled_dataclass.csv`
-- `/tmp/cutepets-dataclass-out/dataclass_field_shape.csv`
-- `/tmp/cutepets-dataclass-out/dataclass_shape.csv`
-- `/tmp/cutepets-dataclass-out/dataclass_dependency.csv`
+- `/tmp/project-dataclass-out/modeled_dataclass.csv`
+- `/tmp/project-dataclass-out/dataclass_field_shape.csv`
+- `/tmp/project-dataclass-out/dataclass_shape.csv`
+- `/tmp/project-dataclass-out/dataclass_dependency.csv`
 
-## Example output on CutePetsBoston
+## Example output shape
 
-Current discovered dataclasses:
+Current discovered dataclasses are emitted as module/class pairs:
 
-- `abstractions.AdoptablePet`
-- `abstractions.Post`
-- `abstractions.PostResult`
-- `social_posters.mastodon.PreparedCaption`
-- `social_posters.mastodon.CaptionThread`
-- `utils.pipeline.Phase`
-- `utils.pipeline.PipelineResult`
-- `utils.pipeline_preview.PreviewSection`
+- `<module_a>.<DataclassA>`
+- `<module_a>.<DataclassB>`
+- `<module_b>.<DataclassC>`
 
 Example `dataclass_shape` rows:
 
-- `abstractions.AdoptablePet -> [11, 4, 6, 7, 0, 0]`
-- `abstractions.Post -> [5, 1, 3, 4, 1, 0]`
-- `utils.pipeline.PipelineResult -> [3, 0, 1, 2, 2, 0]`
+- `<module_a>.<DataclassA> -> [field_count, required_count, optional_count, defaulted_count, factory_count, frozen]`
+- `<module_a>.<DataclassB> -> [field_count, required_count, optional_count, defaulted_count, factory_count, frozen]`
 
 Interpreting that record:
 
@@ -72,14 +66,13 @@ Interpreting that record:
 
 Example dependencies:
 
-- `social_posters.mastodon.PreparedCaption.post -> Post`
-- `utils.pipeline.PipelineResult.trace -> Phase`
+- `<module_a>.<DataclassA>.<field_name> -> <DataclassB>`
+- `<module_b>.<DataclassC>.<field_name> -> <DataclassA>`
 
 Example factory-backed fields:
 
-- `abstractions.Post.tags -> list`
-- `utils.pipeline.PipelineResult.trace -> list`
-- `utils.pipeline.PipelineResult.errors -> list`
+- `<module_a>.<DataclassA>.<field_name> -> list`
+- `<module_b>.<DataclassC>.<field_name> -> dict`
 
 ## What the outputs mean
 
@@ -101,4 +94,4 @@ Example factory-backed fields:
 - Type references are syntactic and not fully resolved across imports.
 - Dataclass dependencies are name-based, so collisions between unrelated classes with the same name are possible.
 - This layer models declared schema, not runtime invariants or control flow.
-- Methods that construct, transform, or validate dataclasses are not yet connected to the schema layer.
+- Method construction, transformation, and validation behavior is modeled by later effect, deduction, and test-target layers rather than this schema-only layer.

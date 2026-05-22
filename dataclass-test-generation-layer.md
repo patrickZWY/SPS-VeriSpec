@@ -1,0 +1,307 @@
+# Dataclass Test Generation Layer
+
+This file describes the next modeling layer after the current dataclass
+schema/effect/dataflow rules.
+
+The current rules can answer questions like:
+
+- Which dataclasses exist?
+- Which fields are required, optional, defaulted, or factory-backed?
+- Which functions connect `DataclassA -> DataclassB`?
+- Which fields are read in a transformation?
+
+That is useful, but it is not enough for generating tests that expose bad
+dataclass design or behavior bugs. Test generation needs stronger semantic
+candidates: mutability risks, constructor boundary conditions, class/dataclass
+roles, method-level transformation behavior, and field-level influence.
+
+## Goal
+
+Produce derived facts that can become test targets.
+
+Examples:
+
+- A mutable dataclass is passed through many platform publishers.
+- A required field is never read after construction.
+- An optional field is read before a guard.
+- A frozen dataclass contains a mutable field such as `list`.
+- A class method transforms one dataclass into another while reading only a
+  subset of required fields.
+- A subclass overrides a method that transforms the same input dataclass into a
+  different output dataclass.
+
+## Current facts already useful for this
+
+The extractor already emits enough facts for a first version:
+
+- `defines_class(Module, ClassName)`
+- `extends(Module, ClassName, BaseName)`
+- `dataclass(Module, ClassName, IsFrozen, LineNumber)`
+- `dataclass_field(Module, ClassName, FieldName, TypeRepr, IsOptional, HasDefault, DefaultKind, Position, LineNumber)`
+- `dataclass_field_default_factory(Module, ClassName, FieldName, FactoryName)`
+- `dataclass_field_type_ref(Module, ClassName, FieldName, TypeRef)`
+- `method_of_class(Module, ClassName, QualifiedName)`
+- `function_param_type_ref(Module, QualifiedName, ParamName, TypeRef)`
+- `function_return_type_ref(Module, QualifiedName, TypeRef)`
+- `returns_dataclass(Module, QualifiedName, ClassName, LineNumber)`
+- `attribute_read(Module, QualifiedName, OwnerName, AttributeName, LineNumber)`
+- `attribute_write(Module, QualifiedName, OwnerName, AttributeName, LineNumber)`
+- `calls(Module, QualifiedName, CalleeName, LineNumber)`
+- `instantiates(Module, QualifiedName, ClassName, LineNumber)`
+- `function_name(Module, QualifiedName, Name)`
+
+## Derived dataclass design facts
+
+These are schema-level facts that can become test heuristics.
+
+```souffle
+.decl mutable_dataclass(module_name:symbol, class_name:symbol)
+.decl frozen_dataclass(module_name:symbol, class_name:symbol)
+.decl optional_dataclass_field(module_name:symbol, class_name:symbol, field_name:symbol)
+.decl required_dataclass_field(module_name:symbol, class_name:symbol, field_name:symbol)
+.decl mutable_default_factory_field(module_name:symbol, class_name:symbol, field_name:symbol, factory_name:symbol)
+.decl frozen_contains_mutable_field(module_name:symbol, class_name:symbol, field_name:symbol, factory_name:symbol)
+
+mutable_dataclass(M, C) :- dataclass(M, C, 0, _).
+frozen_dataclass(M, C) :- dataclass(M, C, 1, _).
+
+optional_dataclass_field(M, C, F) :-
+  dataclass_field(M, C, F, _, 1, _, _, _, _).
+
+required_dataclass_field(M, C, F) :-
+  dataclass_field(M, C, F, _, 0, 0, _, _, _).
+
+mutable_default_factory_field(M, C, F, Factory) :-
+  dataclass_field_default_factory(M, C, F, Factory),
+  (Factory = "list"; Factory = "dict"; Factory = "set").
+
+frozen_contains_mutable_field(M, C, F, Factory) :-
+  frozen_dataclass(M, C),
+  mutable_default_factory_field(M, C, F, Factory).
+```
+
+Test targets:
+
+- For `mutable_dataclass`, generate mutation/aliasing tests around methods that pass the value through.
+- For `frozen_contains_mutable_field`, test whether nested mutable state can still be mutated despite `frozen=True`.
+- For optional fields, generate `None` boundary tests for every method that reads the field.
+
+## Class/dataclass role facts
+
+Classes should be related to dataclasses by role, not only by raw type edges.
+
+```souffle
+.decl class_method_uses_dataclass(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  dataclass_module:symbol,
+  dataclass_name:symbol,
+  role:symbol
+)
+
+class_method_uses_dataclass(CM, Class, Q, DM, D, "accepts") :-
+  method_of_class(CM, Class, Q),
+  function_param_type_ref(CM, Q, _, D),
+  dataclass(DM, D, _, _).
+
+class_method_uses_dataclass(CM, Class, Q, DM, D, "returns") :-
+  method_of_class(CM, Class, Q),
+  function_return_type_ref(CM, Q, D),
+  dataclass(DM, D, _, _).
+
+class_method_uses_dataclass(CM, Class, Q, DM, D, "constructs") :-
+  method_of_class(CM, Class, Q),
+  instantiates(CM, Q, D, _),
+  dataclass(DM, D, _, _).
+```
+
+This lets us classify project classes:
+
+- source classes produce domain dataclasses
+- formatter classes transform domain dataclasses
+- poster classes consume `Post` and return `PostResult`
+- preview/debug classes consume intermediate dataclasses
+
+Test targets:
+
+- For every class role `accepts + returns`, generate round-trip or transformation tests.
+- For every class role `accepts + constructs`, generate constructor-boundary tests.
+- For every subclass that implements the same abstract method, generate conformance tests against the base method contract.
+
+## Inheritance and override facts
+
+Inheritance is important because bugs often appear when subclasses violate a
+base dataclass contract.
+
+```souffle
+.decl class_inherits(module_name:symbol, class_name:symbol, base_name:symbol)
+.decl inherited_dataclass_method(
+  module_name:symbol,
+  class_name:symbol,
+  base_name:symbol,
+  qualified_name:symbol,
+  dataclass_name:symbol,
+  role:symbol
+)
+
+class_inherits(M, C, Base) :-
+  extends(M, C, Base).
+
+inherited_dataclass_method(M, C, Base, Q, D, Role) :-
+  class_inherits(M, C, Base),
+  class_method_uses_dataclass(_, Base, Q, _, D, Role).
+```
+
+The current fact schema does not fully resolve base classes across imports, so
+this is name-based. It is still useful for abstract base classes such as
+`PetSource` and `SocialPoster`.
+
+Test targets:
+
+- Every `SocialPoster.publish(post: Post) -> PostResult` implementation should be tested with the same `Post` boundary cases.
+- Every `PetSource.fetch_pets() -> Iterable[AdoptablePet]` implementation should be tested for required `AdoptablePet` fields.
+
+## Method-level transformation facts
+
+A useful test-generation unit is not just `A -> B`. It is:
+
+```text
+class method + input dataclass + output dataclass + fields read + fields written/constructed + calls/effects
+```
+
+Suggested relation:
+
+```souffle
+.decl method_dataclass_transform(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  target_module:symbol,
+  target_class:symbol
+)
+
+method_dataclass_transform(CM, Class, Q, SM, Source, TM, Target) :-
+  method_of_class(CM, Class, Q),
+  function_param_type_ref(CM, Q, _, Source),
+  function_return_type_ref(CM, Q, Target),
+  dataclass(SM, Source, _, _),
+  dataclass(TM, Target, _, _),
+  Source != Target.
+```
+
+Then add field influence:
+
+```souffle
+.decl method_transform_reads_field(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  source_class:symbol,
+  field_name:symbol,
+  target_class:symbol
+)
+
+method_transform_reads_field(CM, Class, Q, Source, Field, Target) :-
+  method_dataclass_transform(CM, Class, Q, _, Source, _, Target),
+  function_param_type_ref(CM, Q, Param, Source),
+  attribute_read(CM, Q, Param, Field, _).
+```
+
+Test targets:
+
+- For every field read in a transform, generate value-variation tests and assert the output changes or remains stable as expected.
+- For required source fields not read in a transform, flag dead/overmodeled fields or missing test coverage.
+- For optional source fields read in a transform, generate `None`, empty string/list, and valid-value cases.
+
+## Interaction facts between dataclasses
+
+Dataclasses can interact through more than type-to-type transformation.
+
+Suggested interaction kinds:
+
+- `contains`: a dataclass field refers to another dataclass type.
+- `transforms_to`: a function/method accepts one dataclass and returns another.
+- `wraps`: a dataclass stores another dataclass as a field.
+- `summarizes`: a dataclass output reads a subset of input fields.
+- `branches_on`: a method reads an optional/boolean field in a condition.
+- `validates`: a method returns an error/result dataclass based on input field checks.
+- `publishes`: a method consumes a dataclass and performs network effects.
+
+The first three can mostly be derived today. The last four need richer AST
+facts about conditions, constructor keyword arguments, and return branches.
+
+## Extractor support now implemented
+
+The extractor now emits these test-generation facts:
+
+- `constructor_kwarg(Module, QualifiedName, ConstructedClass, ArgName, SourceExpr, LineNumber)`
+- `return_constructor_kwarg(Module, QualifiedName, ConstructedClass, ArgName, SourceExpr, LineNumber)`
+- `field_flows_to_constructor_arg(Module, QualifiedName, SourceParam, SourceField, ConstructedClass, ArgName, LineNumber)`
+- `condition_reads_attribute(Module, QualifiedName, OwnerName, AttributeName, LineNumber)`
+- `returns_none(Module, QualifiedName, LineNumber)`
+- `returns_literal(Module, QualifiedName, LiteralKind, LiteralValue, LineNumber)`
+- `function_name(Module, QualifiedName, Name)`
+- `method_override(Module, ClassName, BaseName, MethodName, QualifiedName)`
+- `local_depends_on_field(Module, QualifiedName, LocalName, SourceParam, SourceField, LineNumber)`
+- `call_result_assigned(Module, QualifiedName, LocalName, CalleeName, LineNumber)`
+- `local_dataclass_value(Module, QualifiedName, LocalName, ClassName, LineNumber)`
+
+These are sufficient for a first generic test-target model in
+`rule_layer/dataclass_test_model.dl`.
+
+## Remaining extractor upgrades
+
+Useful next upgrades:
+
+- `resolved_extends(Module, ClassName, BaseModule, BaseName)`
+- `resolved_param_type_ref(Module, QualifiedName, ParamName, TypeModule, TypeName)`
+- `resolved_return_type_ref(Module, QualifiedName, TypeModule, TypeName)`
+- more precise call-boundary flow summaries so arbitrary call results do not over-approximate downstream constructor arguments
+- branch-local return facts that connect a condition to a specific returned constructor
+
+The most important implemented fact is `field_flows_to_constructor_arg`. It
+now includes direct field references and intraprocedural local dependencies, so
+it can turn a vague transform edge like:
+
+```text
+AdoptablePet -> Post
+```
+
+into a testable mapping:
+
+```text
+AdoptablePet.image_url -> Post.image_url
+AdoptablePet.adoption_url -> Post.link
+AdoptablePet.name/breed/species -> Post.alt_text
+```
+
+That is the level where generated tests become useful.
+
+## What this enables for CutePetsBoston
+
+The current project would get test targets such as:
+
+- Vary `AdoptablePet.image_url` and assert `Post.image_url` follows it.
+- Set `AdoptablePet.adoption_url = None` and assert post text/link behavior is intentional.
+- Vary `AdoptablePet.breed` and assert `Post.alt_text` and tag generation behave correctly.
+- Run the same `Post` cases through every `SocialPoster.publish` implementation and assert each returns `PostResult`.
+- Generate Mastodon-specific tests for `Post.text` and `Post.tags` flowing into `PreparedCaption` and then `CaptionThread`.
+- Use inferred local/call-result reads to avoid flagging `PostResult.success` as unread when orchestration code checks publish results.
+
+## Bottom line
+
+The next step should not be more generic dataflow. It should be a
+class/dataclass interaction model that preserves enough structure to generate
+tests:
+
+```text
+class role
++ method transform
++ field optionality/default/frozen metadata
++ field-to-constructor-argument flow
++ inheritance/override contracts
+= useful test targets
+```
