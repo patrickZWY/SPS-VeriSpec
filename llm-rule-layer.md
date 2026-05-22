@@ -74,6 +74,16 @@ The extractor currently emits these relevant predicates:
 - `local_depends_on_field(Module, QualifiedName, LocalName, SourceParam, SourceField, LineNumber)`
 - `call_result_assigned(Module, QualifiedName, LocalName, CalleeName, LineNumber)`
 - `local_dataclass_value(Module, QualifiedName, LocalName, ClassName, LineNumber)`
+- `literal_assigned(Module, QualifiedName, LocalName, LiteralKind, LiteralValue, LineNumber)`
+- `constructor_arg_literal(Module, QualifiedName, ConstructedClass, ArgName, LiteralKind, LiteralValue, LineNumber)`
+- `return_constructor_arg_literal(Module, QualifiedName, ConstructedClass, ArgName, LiteralKind, LiteralValue, LineNumber)`
+- `constructor_arg_string_composition(Module, QualifiedName, ConstructedClass, ArgName, CompositionKind, LineNumber)`
+- `return_arg_string_composition(Module, QualifiedName, ConstructedClass, ArgName, CompositionKind, LineNumber)`
+- `numeric_literal(Module, QualifiedName, Value, LineNumber)`
+- `numeric_assignment(Module, QualifiedName, LocalName, Value, LineNumber)`
+- `len_call(Module, QualifiedName, Expression, LineNumber)`
+- `numeric_compare(Module, QualifiedName, Expression, Op, Value, LineNumber)`
+- `string_slice_upper_bound(Module, QualifiedName, Expression, UpperBound, LineNumber)`
 
 The model should assume:
 
@@ -95,6 +105,7 @@ The model should assume:
 4. Then connect functions or methods to the dataclass layer through typed parameters, typed returns, constructor sites, field reads/writes, and exception effects.
 5. Then use Souffle deduction to surface hidden relations such as reachable transformations, bridge dataclasses, field-to-transformation links, and unread required fields.
 6. Then derive test-generation targets from class/dataclass roles, method-level transformations, field-to-constructor-argument flows, optional-field branches, mutability, and override contracts.
+7. Then derive semantic candidates from composed field flows, observable required fields, literal constructor values, string composition, and numeric bounds. Keep these conservative and validate them with generated concrete tests.
 
 ## Prompt template for dataclass modeling
 
@@ -143,6 +154,16 @@ Base predicates:
 - local_depends_on_field(Module, QualifiedName, LocalName, SourceParam, SourceField, LineNumber)
 - call_result_assigned(Module, QualifiedName, LocalName, CalleeName, LineNumber)
 - local_dataclass_value(Module, QualifiedName, LocalName, ClassName, LineNumber)
+- literal_assigned(Module, QualifiedName, LocalName, LiteralKind, LiteralValue, LineNumber)
+- constructor_arg_literal(Module, QualifiedName, ConstructedClass, ArgName, LiteralKind, LiteralValue, LineNumber)
+- return_constructor_arg_literal(Module, QualifiedName, ConstructedClass, ArgName, LiteralKind, LiteralValue, LineNumber)
+- constructor_arg_string_composition(Module, QualifiedName, ConstructedClass, ArgName, CompositionKind, LineNumber)
+- return_arg_string_composition(Module, QualifiedName, ConstructedClass, ArgName, CompositionKind, LineNumber)
+- numeric_literal(Module, QualifiedName, Value, LineNumber)
+- numeric_assignment(Module, QualifiedName, LocalName, Value, LineNumber)
+- len_call(Module, QualifiedName, Expression, LineNumber)
+- numeric_compare(Module, QualifiedName, Expression, Op, Value, LineNumber)
+- string_slice_upper_bound(Module, QualifiedName, Expression, UpperBound, LineNumber)
 
 Task:
 [INSERT CONCRETE MODELING GOAL]
@@ -178,6 +199,10 @@ A good answer typically does some of the following:
 - identifies field-to-constructor-argument mappings for concrete test targets
 - classifies classes by how their methods accept, return, or construct dataclasses
 - surfaces optional-field branches and override contracts
+- composes field flows across transformations when the intermediate field identity is known
+- distinguishes observable required fields from required fields that appear lossy in a transform
+- derives boundary-test candidates from numeric comparisons and slice bounds
+- surfaces literal status/result fields such as `success=True` or `success=False`
 - summarizes dataclasses without pretending to know runtime semantics
 
 ## Review checklist
@@ -189,26 +214,28 @@ Use this checklist before accepting an LLM-generated model:
 - Does it use structured Souffle types when the data is naturally structured?
 - Are the rules generic across Python projects?
 - Does it avoid claiming behavioral guarantees from schema-only facts?
-- Does it clearly separate current schema facts from future desired facts?
+- Does it clearly separate current facts, conservative semantic candidates, and future desired facts?
 
 ## Minimum next-step extractor upgrades
 
 The current extractor already supports schema facts, typed function signatures,
 constructor returns, constructor keyword arguments, direct and local-derived
 field-to-constructor argument flow, field access, condition field reads, literal
-returns, call-result assignment, local dataclass values, method override
-candidates, and basic exception facts.
+returns, assigned literals, constructor argument literals, string-composition
+markers, numeric literals, numeric assignments, `len(...)` calls, numeric
+comparisons, slice upper bounds, call-result assignment, local dataclass values,
+method override candidates, and basic exception facts.
 
 The next useful upgrades after this are:
 
 - `reads_dataclass_field(Module, QualifiedName, ClassName, FieldName, LineNumber)` with resolved class identity instead of parameter-name joining
 - `writes_dataclass_field(Module, QualifiedName, ClassName, FieldName, LineNumber)` with resolved class identity
 - `calls_resolved(Module, QualifiedName, TargetModule, TargetQualifiedName, LineNumber)`
+- `branch_return(Module, QualifiedName, ConditionId, ReturnedClass, LineNumber)` to connect guards to returned constructors
+- CFG/control-dependence facts for validation and guarded-effect reasoning
 - `writes_env_var(Module, QualifiedName, EnvVarName, LineNumber)`
 - `file_effect(Module, QualifiedName, EffectKind, PathHint, LineNumber)`
-- `resolved_extends(Module, ClassName, BaseModule, BaseName)`
-- `resolved_param_type_ref(Module, QualifiedName, ParamName, TypeModule, TypeName)`
-- `resolved_return_type_ref(Module, QualifiedName, TypeModule, TypeName)`
+- more precise alias/points-to summaries for local variables and object fields
 
 The default should remain:
 model all dataclasses first, then connect code behavior to that schema only when needed.

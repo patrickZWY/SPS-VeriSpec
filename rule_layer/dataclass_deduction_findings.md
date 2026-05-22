@@ -8,6 +8,10 @@ This is the point where Souffle starts being used for actual deduction:
 transitive relationships, topology, latent field influence, and schema/effect
 blind spots.
 
+For field-level semantic composition, literal constructor values, and numeric
+boundary candidates, see the later generic semantic layer in
+`rule_layer/semantic_model.dl`.
+
 ## Souffle program
 
 The generic program is `rule_layer/dataclass_deduction_model.dl`.
@@ -83,3 +87,4 @@ something more like a latent relational model:
 - Transformations are still syntactic and type-name-based.
 - Reachability is structural, not proof of runtime execution paths.
 - Unread required fields may reflect real blind spots or simply limitations of the current field-access extraction.
+- Semantic flow and boundary-test derivations are handled in `rule_layer/semantic_model.dl`, not this deduction-only layer.

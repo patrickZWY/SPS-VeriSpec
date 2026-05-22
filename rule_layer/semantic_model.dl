@@ -1,0 +1,214 @@
+// Generic semantic model over Python AST facts.
+//
+// This layer goes beyond dataclass shape. It derives conservative semantic
+// obligations from value flow, string composition, literal constructor
+// arguments, and numeric bounds.
+
+.include "rule_layer/base_facts.dl"
+
+.decl semantic_field_flow(
+  function_module:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  target_field:symbol,
+  flow_kind:symbol
+)
+.output semantic_field_flow
+
+.decl composed_semantic_field_flow(
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  target_field:symbol
+)
+.output composed_semantic_field_flow
+
+.decl observable_required_field(
+  function_module:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  target_field:symbol
+)
+.output observable_required_field
+
+.decl lossy_required_field_candidate(
+  function_module:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol
+)
+.output lossy_required_field_candidate
+
+.decl dataclass_bool_literal(
+  function_module:symbol,
+  qualified_name:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  field_name:symbol,
+  literal_value:symbol
+)
+.output dataclass_bool_literal
+
+.decl dataclass_string_literal(
+  function_module:symbol,
+  qualified_name:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  field_name:symbol,
+  literal_value:symbol
+)
+.output dataclass_string_literal
+
+.decl string_composition_target(
+  function_module:symbol,
+  qualified_name:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  field_name:symbol,
+  composition_kind:symbol
+)
+.output string_composition_target
+
+.decl numeric_bound(
+  function_module:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  bound_kind:symbol,
+  bound_value:number,
+  line:number
+)
+.output numeric_bound
+
+.decl boundary_test_candidate(
+  function_module:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  case_kind:symbol,
+  test_value:number
+)
+.output boundary_test_candidate
+
+.decl numeric_bound_conflict_candidate(
+  function_module:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  lower_bound:number,
+  upper_bound:number
+)
+.output numeric_bound_conflict_candidate
+
+semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, "constructor_arg") :-
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  field_flows_to_constructor_arg(FM, Q, SourceParam, SourceField, Target, TargetField, _),
+  dataclass(TM, Target, _, _),
+  dataclass_field(TM, Target, TargetField, _, _, _, _, _, _).
+
+semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, "local_constructor_arg") :-
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  local_depends_on_field(FM, Q, Local, SourceParam, SourceField, _),
+  field_flows_to_constructor_arg(FM, Q, Local, SourceField, Target, TargetField, _),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  dataclass(TM, Target, _, _),
+  dataclass_field(TM, Target, TargetField, _, _, _, _, _, _).
+
+semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, "string_composition") :-
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  constructor_arg_string_composition(FM, Q, Target, TargetField, _, _).
+
+composed_semantic_field_flow(SM, Source, SourceField, TM, Target, TargetField) :-
+  semantic_field_flow(_, _, SM, Source, SourceField, TM, Target, TargetField, _).
+
+composed_semantic_field_flow(SM, Source, SourceField, TM, Target, TargetField) :-
+  semantic_field_flow(_, _, SM, Source, SourceField, MidModule, MidClass, MidField, _),
+  composed_semantic_field_flow(MidModule, MidClass, MidField, TM, Target, TargetField).
+
+observable_required_field(FM, Q, SM, Source, SourceField, TM, Target, TargetField) :-
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  dataclass_field(SM, Source, SourceField, _, 0, 0, _, _, _),
+  dataclass_field(TM, Target, TargetField, "str", _, _, _, _, _).
+
+observable_required_field(FM, Q, SM, Source, SourceField, TM, Target, TargetField) :-
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  dataclass_field(SM, Source, SourceField, _, 0, 0, _, _, _),
+  dataclass_field(TM, Target, TargetField, "Optional[str]", _, _, _, _, _).
+
+observable_required_field(FM, Q, SM, Source, SourceField, TM, Target, TargetField) :-
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  dataclass_field(SM, Source, SourceField, _, 0, 0, _, _, _),
+  dataclass_field(TM, Target, TargetField, "str | None", _, _, _, _, _).
+
+lossy_required_field_candidate(FM, Q, SM, Source, SourceField, TM, Target) :-
+  resolved_param_type_ref(FM, Q, _, SM, Source),
+  resolved_returns_dataclass(FM, Q, TM, Target, _),
+  dataclass_field(SM, Source, SourceField, _, 0, 0, _, _, _),
+  dataclass(TM, Target, _, _),
+  !semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, _, _).
+
+dataclass_bool_literal(FM, Q, TM, Target, Field, Value) :-
+  return_constructor_arg_literal(FM, Q, Target, Field, "bool", Value, _),
+  dataclass_field(TM, Target, Field, "bool", _, _, _, _, _).
+
+dataclass_bool_literal(FM, Q, TM, Target, Field, Value) :-
+  constructor_arg_literal(FM, Q, Target, Field, "bool", Value, _),
+  dataclass_field(TM, Target, Field, "bool", _, _, _, _, _).
+
+dataclass_string_literal(FM, Q, TM, Target, Field, Value) :-
+  return_constructor_arg_literal(FM, Q, Target, Field, "str", Value, _),
+  dataclass_field(TM, Target, Field, "str", _, _, _, _, _).
+
+dataclass_string_literal(FM, Q, TM, Target, Field, Value) :-
+  constructor_arg_literal(FM, Q, Target, Field, "str", Value, _),
+  dataclass_field(TM, Target, Field, "str", _, _, _, _, _).
+
+string_composition_target(FM, Q, TM, Target, Field, Kind) :-
+  constructor_arg_string_composition(FM, Q, Target, Field, Kind, _),
+  dataclass_field(TM, Target, Field, _, _, _, _, _, _).
+
+string_composition_target(FM, Q, TM, Target, Field, Kind) :-
+  return_arg_string_composition(FM, Q, Target, Field, Kind, _),
+  dataclass_field(TM, Target, Field, _, _, _, _, _, _).
+
+numeric_bound(FM, Q, Expr, "upper_inclusive", Value, Line) :-
+  numeric_compare(FM, Q, Expr, "le", Value, Line).
+
+numeric_bound(FM, Q, Expr, "upper_exclusive", Value, Line) :-
+  numeric_compare(FM, Q, Expr, "lt", Value, Line).
+
+numeric_bound(FM, Q, Expr, "lower_inclusive", Value, Line) :-
+  numeric_compare(FM, Q, Expr, "ge", Value, Line).
+
+numeric_bound(FM, Q, Expr, "lower_exclusive", Value, Line) :-
+  numeric_compare(FM, Q, Expr, "gt", Value, Line).
+
+numeric_bound(FM, Q, Expr, "upper_exclusive", Value, Line) :-
+  string_slice_upper_bound(FM, Q, Expr, Value, Line).
+
+boundary_test_candidate(FM, Q, Expr, "below", TestValue) :-
+  numeric_bound(FM, Q, Expr, _, Bound, _),
+  TestValue = Bound - 1.
+
+boundary_test_candidate(FM, Q, Expr, "at", Bound) :-
+  numeric_bound(FM, Q, Expr, _, Bound, _).
+
+boundary_test_candidate(FM, Q, Expr, "above", TestValue) :-
+  numeric_bound(FM, Q, Expr, _, Bound, _),
+  TestValue = Bound + 1.
+
+numeric_bound_conflict_candidate(FM, Q, Expr, Lower, Upper) :-
+  numeric_bound(FM, Q, Expr, "lower_inclusive", Lower, _),
+  numeric_bound(FM, Q, Expr, "upper_inclusive", Upper, _),
+  Lower > Upper.

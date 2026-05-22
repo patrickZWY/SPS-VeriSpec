@@ -70,6 +70,11 @@ Fields currently observed as contributing to Mastodon caption transformations:
 - `PreparedCaption.caption_text -> CaptionThread`
 - `PreparedCaption.tag_suffix -> CaptionThread`
 
+The generic semantic model now composes these field influences across
+intermediate dataclasses and also records observable required fields, explicit
+dataclass constructor literals, string-composition targets, and numeric
+boundary candidates.
+
 ## Effect categories to watch
 
 - Network effects are attached to source fetching and platform publishing through calls such as `requests.post`, `requests.get`, response parsing, and platform SDK calls.
@@ -81,3 +86,4 @@ Fields currently observed as contributing to Mastodon caption transformations:
 - The effect model itself still records parameter-based field reads, while the test-generation and deduction layers add local alias and call-result inference.
 - Function-level call effects are over-approximated: every call inside a dataclass-linked function is associated with that dataclass.
 - Call-result propagation is conservative and can over-approximate semantic influence through SDK/API return values.
+- Branch-local result semantics are still future work; literal result fields are currently not tied to their controlling conditions.

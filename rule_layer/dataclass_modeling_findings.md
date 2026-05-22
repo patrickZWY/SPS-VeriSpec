@@ -94,4 +94,4 @@ Example factory-backed fields:
 - Type references are syntactic and not fully resolved across imports.
 - Dataclass dependencies are name-based, so collisions between unrelated classes with the same name are possible.
 - This layer models declared schema, not runtime invariants or control flow.
-- Method construction, transformation, and validation behavior is modeled by later effect, deduction, and test-target layers rather than this schema-only layer.
+- Method construction, transformation, validation candidates, semantic field flow, literal values, and numeric boundaries are modeled by later effect, deduction, test-target, and semantic layers rather than this schema-only layer.

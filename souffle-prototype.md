@@ -32,6 +32,10 @@ The extractor emits Souffle-compatible base facts for:
 - local dataclass value assignments
 - condition attribute reads
 - literal and `None` returns
+- assigned literals and constructor argument literals
+- constructor/return string-composition markers for f-strings, joins, format calls, and simple concatenation
+- numeric literals and numeric local assignments
+- `len(...)` calls, numeric comparisons, and string slice upper bounds
 - syntactic method override candidates
 
 By default it skips `tests/` and `manual_testing/` so the initial model stays
@@ -178,6 +182,43 @@ Useful outputs:
 - `frozen_contains_mutable_field.csv`
 - `override_dataclass_contract.csv`
 
+## Generic semantic modeling
+
+After schema, effect, deduction, and test-target modeling, the semantic layer
+derives conservative behavioral obligations from value flow, literals, strings,
+and numeric bounds:
+
+```bash
+mkdir -p /tmp/project-semantic-out
+souffle -F /tmp/project-facts -D /tmp/project-semantic-out \
+  rule_layer/semantic_model.dl
+```
+
+This layer does not try to prove full runtime behavior. It surfaces semantic
+candidates that can be validated with concrete tests:
+
+- semantic field flows from source dataclass fields into target dataclass fields
+- composed semantic field flows across multiple dataclass transformations
+- required fields that are observable through string-valued outputs
+- required fields that appear lossy in a transform
+- boolean and string literal constructor values for dataclass fields
+- string composition targets
+- numeric bounds and boundary-test candidates around comparisons and slicing
+- conflicting numeric-bound candidates
+
+Useful outputs:
+
+- `semantic_field_flow.csv`
+- `composed_semantic_field_flow.csv`
+- `observable_required_field.csv`
+- `lossy_required_field_candidate.csv`
+- `dataclass_bool_literal.csv`
+- `dataclass_string_literal.csv`
+- `string_composition_target.csv`
+- `numeric_bound.csv`
+- `boundary_test_candidate.csv`
+- `numeric_bound_conflict_candidate.csv`
+
 ## One-command runner
 
 There is also a generic runner:
@@ -186,8 +227,8 @@ There is also a generic runner:
 python3 tools/run_souffle_models.py <python-project> --work-dir /tmp/project-run
 ```
 
-This executes extraction plus the schema, effect, deduction, and test-target
-models, then writes a Markdown summary to:
+This executes extraction plus the schema, effect, deduction, test-target, and
+semantic models, then writes a Markdown summary to:
 
 ```text
 /tmp/project-run/summary.md
@@ -213,6 +254,10 @@ souffle -F /tmp/cutepets-facts -D /tmp/cutepets-deduction-out \
 mkdir -p /tmp/cutepets-test-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-test-out \
   rule_layer/dataclass_test_model.dl
+
+mkdir -p /tmp/cutepets-semantic-out
+souffle -F /tmp/cutepets-facts -D /tmp/cutepets-semantic-out \
+  rule_layer/semantic_model.dl
 
 python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-run
 ```
@@ -245,6 +290,10 @@ souffle -F /tmp/cutepets-facts -D /tmp/cutepets-deduction-out \
 mkdir -p /tmp/cutepets-test-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-test-out \
   rule_layer/dataclass_test_model.dl
+
+mkdir -p /tmp/cutepets-semantic-out
+souffle -F /tmp/cutepets-facts -D /tmp/cutepets-semantic-out \
+  rule_layer/semantic_model.dl
 
 python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-run
 ```

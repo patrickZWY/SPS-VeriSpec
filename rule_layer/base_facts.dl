@@ -295,3 +295,99 @@
   line:number
 )
 .input resolved_local_dataclass_value
+
+.decl literal_assigned(
+  module_name:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  literal_kind:symbol,
+  literal_value:symbol,
+  line:number
+)
+.input literal_assigned
+
+.decl constructor_arg_literal(
+  module_name:symbol,
+  qualified_name:symbol,
+  constructed_class:symbol,
+  arg_name:symbol,
+  literal_kind:symbol,
+  literal_value:symbol,
+  line:number
+)
+.input constructor_arg_literal
+
+.decl return_constructor_arg_literal(
+  module_name:symbol,
+  qualified_name:symbol,
+  constructed_class:symbol,
+  arg_name:symbol,
+  literal_kind:symbol,
+  literal_value:symbol,
+  line:number
+)
+.input return_constructor_arg_literal
+
+.decl constructor_arg_string_composition(
+  module_name:symbol,
+  qualified_name:symbol,
+  constructed_class:symbol,
+  arg_name:symbol,
+  composition_kind:symbol,
+  line:number
+)
+.input constructor_arg_string_composition
+
+.decl return_arg_string_composition(
+  module_name:symbol,
+  qualified_name:symbol,
+  constructed_class:symbol,
+  arg_name:symbol,
+  composition_kind:symbol,
+  line:number
+)
+.input return_arg_string_composition
+
+.decl numeric_literal(
+  module_name:symbol,
+  qualified_name:symbol,
+  value:number,
+  line:number
+)
+.input numeric_literal
+
+.decl numeric_assignment(
+  module_name:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  value:number,
+  line:number
+)
+.input numeric_assignment
+
+.decl len_call(
+  module_name:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  line:number
+)
+.input len_call
+
+.decl numeric_compare(
+  module_name:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  op:symbol,
+  value:number,
+  line:number
+)
+.input numeric_compare
+
+.decl string_slice_upper_bound(
+  module_name:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  upper_bound:number,
+  line:number
+)
+.input string_slice_upper_bound

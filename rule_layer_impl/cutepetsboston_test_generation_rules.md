@@ -1,7 +1,7 @@
 # CutePetsBoston Test Generation Rules
 
 This file records project-specific test-generation targets derived from the
-generic dataclass test model.
+generic dataclass test model and the generic semantic model.
 
 Generated with:
 
@@ -9,11 +9,12 @@ Generated with:
 python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-updated-run2
 ```
 
-## New model layer
+## Model layers
 
 The generic model is `rule_layer/dataclass_test_model.dl`.
+The semantic model is `rule_layer/semantic_model.dl`.
 
-It derives test-oriented relations from:
+They derive test-oriented relations from:
 
 - dataclass field metadata
 - class/method ownership
@@ -22,6 +23,10 @@ It derives test-oriented relations from:
 - direct and local-derived field-to-constructor-argument flows
 - local dependencies through aliases and composed expressions
 - optional fields read in branch conditions
+- literal constructor values
+- string composition targets
+- numeric comparisons, `len(...)`, and slice bounds
+- composed semantic field flows and observable required fields
 
 ## Current project test targets
 
@@ -79,10 +84,14 @@ Formatting overrides:
 - Run shared `Post` fixtures through all concrete `publish` implementations and assert each path returns `PostResult`.
 - Generate platform-specific missing-image tests because multiple publish methods branch on `Post.image_url`.
 - Generate Bluesky link/facet tests because `PosterBluesky._build_text_and_facets` branches on `Post.link`.
+- Generate numeric boundary tests from discovered string-length and truncation bounds.
+- Assert explicit success/failure result literal paths such as `PostResult.success = True` and `PostResult.success = False`.
+- Review lossy required-field candidates before deciding whether they are intentional lossy transformations or missing behavior.
 
 ## Current precision limits
 
 - Field-to-constructor-argument flow now captures aliases and many composed expressions, including f-strings and list elements.
+- Semantic flow is conservative and should be validated with concrete tests.
 - Call-result propagation is conservative; mappings through SDK/API return values can over-approximate semantic influence.
-- Override matching is name-based and base-class-name-based; import-resolved inheritance is still future work.
+- Override matching is name-based and base-class-name-based; import-resolved inheritance exists as facts but matching still needs better cross-module precision.
 - Branch facts show that a field appears in a condition, not which return branch it controls.

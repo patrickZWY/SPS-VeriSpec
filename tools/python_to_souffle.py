@@ -105,6 +105,53 @@ SOUFFLE_SCHEMA: dict[str, tuple[str, ...]] = {
         "symbol",
         "number",
     ),
+    "literal_assigned": ("symbol", "symbol", "symbol", "symbol", "symbol", "number"),
+    "constructor_arg_literal": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
+    "return_constructor_arg_literal": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
+    "constructor_arg_string_composition": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
+    "return_arg_string_composition": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
+    "numeric_literal": ("symbol", "symbol", "number", "number"),
+    "numeric_assignment": ("symbol", "symbol", "symbol", "number", "number"),
+    "len_call": ("symbol", "symbol", "symbol", "number"),
+    "numeric_compare": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+        "number",
+    ),
+    "string_slice_upper_bound": ("symbol", "symbol", "symbol", "number", "number"),
 }
 
 
@@ -156,6 +203,7 @@ class PythonFactExtractor(ast.NodeVisitor):
         self._qualname_stack: list[str] = []
         self._local_field_deps_stack: list[dict[str, set[tuple[str, str]]]] = []
         self._local_dataclass_values_stack: list[dict[str, str]] = []
+        self._local_numeric_values_stack: list[dict[str, int]] = []
 
     def extract(self, tree: ast.AST, relative_path: str) -> list[Fact]:
         self.facts.add(Fact("module", (self.module_name,)))
@@ -306,6 +354,72 @@ class PythonFactExtractor(ast.NodeVisitor):
                 Fact("reads_env_var", (self.module_name, caller, env_var, node.lineno))
             )
 
+        if callee == "len" and node.args:
+            self.facts.add(
+                Fact(
+                    "len_call",
+                    (
+                        self.module_name,
+                        caller,
+                        self._expression_repr(node.args[0]),
+                        node.lineno,
+                    ),
+                )
+            )
+
+        self.generic_visit(node)
+
+    def visit_Compare(self, node: ast.Compare) -> None:
+        caller = self._current_callable()
+        for op, comparator in zip(node.ops, node.comparators):
+            left_expr = self._bounded_expr_repr(node.left)
+            op_name = self._compare_op_name(op)
+            numeric_value = self._numeric_bound_value(comparator)
+            if left_expr and op_name and numeric_value is not None:
+                self.facts.add(
+                    Fact(
+                        "numeric_compare",
+                        (
+                            self.module_name,
+                            caller,
+                            left_expr,
+                            op_name,
+                            numeric_value,
+                            node.lineno,
+                        ),
+                    )
+                )
+
+            right_expr = self._bounded_expr_repr(comparator)
+            reverse_op = self._reverse_compare_op_name(op)
+            left_value = self._numeric_bound_value(node.left)
+            if right_expr and reverse_op and left_value is not None:
+                self.facts.add(
+                    Fact(
+                        "numeric_compare",
+                        (
+                            self.module_name,
+                            caller,
+                            right_expr,
+                            reverse_op,
+                            left_value,
+                            node.lineno,
+                        ),
+                    )
+                )
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        caller = self._current_callable()
+        target = self._render_expr(node.value)
+        upper_bound = self._slice_upper_bound(node.slice)
+        if target and upper_bound is not None:
+            self.facts.add(
+                Fact(
+                    "string_slice_upper_bound",
+                    (self.module_name, caller, target, upper_bound, node.lineno),
+                )
+            )
         self.generic_visit(node)
 
     def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
@@ -395,7 +509,9 @@ class PythonFactExtractor(ast.NodeVisitor):
                 )
         self._local_field_deps_stack.append({})
         self._local_dataclass_values_stack.append({})
+        self._local_numeric_values_stack.append({})
         self.generic_visit(node)
+        self._local_numeric_values_stack.pop()
         self._local_dataclass_values_stack.pop()
         self._local_field_deps_stack.pop()
         self._qualname_stack.pop()
@@ -694,6 +810,52 @@ class PythonFactExtractor(ast.NodeVisitor):
                     ),
                 )
             )
+            literal = self._literal_value(keyword.value)
+            if literal:
+                literal_kind, literal_value = literal
+                self.facts.add(
+                    Fact(
+                        "constructor_arg_literal",
+                        (
+                            self.module_name,
+                            caller,
+                            class_name,
+                            keyword.arg,
+                            literal_kind,
+                            literal_value,
+                            keyword.value.lineno,
+                        ),
+                    )
+                )
+            string_kind = self._string_composition_kind(keyword.value)
+            if string_kind:
+                self.facts.add(
+                    Fact(
+                        "constructor_arg_string_composition",
+                        (
+                            self.module_name,
+                            caller,
+                            class_name,
+                            keyword.arg,
+                            string_kind,
+                            keyword.value.lineno,
+                        ),
+                    )
+                )
+            numeric_literal = self._numeric_literal(keyword.value)
+            if numeric_literal is not None:
+                self.facts.add(
+                    Fact(
+                        "numeric_literal",
+                        (
+                            self.module_name,
+                            caller,
+                            numeric_literal,
+                            keyword.value.lineno,
+                        ),
+                    )
+                )
+            self._add_expression_numeric_facts(caller, keyword.value)
             field_flow = self._direct_attribute_flow(keyword.value)
             if field_flow:
                 source_param, source_field = field_flow
@@ -751,6 +913,52 @@ class PythonFactExtractor(ast.NodeVisitor):
                     ),
                 )
             )
+            literal = self._literal_value(keyword.value)
+            if literal:
+                literal_kind, literal_value = literal
+                self.facts.add(
+                    Fact(
+                        "return_constructor_arg_literal",
+                        (
+                            self.module_name,
+                            caller,
+                            class_name,
+                            keyword.arg,
+                            literal_kind,
+                            literal_value,
+                            keyword.value.lineno,
+                        ),
+                    )
+                )
+            string_kind = self._string_composition_kind(keyword.value)
+            if string_kind:
+                self.facts.add(
+                    Fact(
+                        "return_arg_string_composition",
+                        (
+                            self.module_name,
+                            caller,
+                            class_name,
+                            keyword.arg,
+                            string_kind,
+                            keyword.value.lineno,
+                        ),
+                    )
+                )
+            numeric_literal = self._numeric_literal(keyword.value)
+            if numeric_literal is not None:
+                self.facts.add(
+                    Fact(
+                        "numeric_literal",
+                        (
+                            self.module_name,
+                            caller,
+                            numeric_literal,
+                            keyword.value.lineno,
+                        ),
+                    )
+                )
+            self._add_expression_numeric_facts(caller, keyword.value)
 
     def _add_condition_read_facts(self, node: ast.AST) -> None:
         caller = self._current_callable()
@@ -795,9 +1003,52 @@ class PythonFactExtractor(ast.NodeVisitor):
         constructed_class = self._returned_class_name(value)
         callee = self._render_expr(value.func) if isinstance(value, ast.Call) else None
         callee_name = callee.split(".")[-1] if callee else None
+        literal = self._literal_value(value)
+        numeric_literal = self._numeric_literal(value)
+        self._add_expression_numeric_facts(caller, value)
 
         for target in targets:
             for local_name in self._iter_assignment_target_names(target):
+                if literal:
+                    literal_kind, literal_value = literal
+                    self.facts.add(
+                        Fact(
+                            "literal_assigned",
+                            (
+                                self.module_name,
+                                caller,
+                                local_name,
+                                literal_kind,
+                                literal_value,
+                                line,
+                            ),
+                        )
+                    )
+                if numeric_literal is not None:
+                    self._set_numeric_assignment(local_name, numeric_literal)
+                    self.facts.add(
+                        Fact(
+                            "numeric_assignment",
+                            (
+                                self.module_name,
+                                caller,
+                                local_name,
+                                numeric_literal,
+                                line,
+                            ),
+                        )
+                    )
+                    self.facts.add(
+                        Fact(
+                            "numeric_literal",
+                            (
+                                self.module_name,
+                                caller,
+                                numeric_literal,
+                                line,
+                            ),
+                        )
+                    )
                 if field_deps:
                     self._set_local_field_deps(local_name, field_deps)
                     for source_param, source_field in sorted(field_deps):
@@ -876,11 +1127,23 @@ class PythonFactExtractor(ast.NodeVisitor):
         if self._local_dataclass_values_stack:
             self._local_dataclass_values_stack[-1][local_name] = class_name
 
+    def _get_numeric_assignment(self, local_name: str) -> int | None:
+        if not self._local_numeric_values_stack:
+            return None
+        return self._local_numeric_values_stack[-1].get(local_name)
+
+    def _set_numeric_assignment(self, local_name: str, value: int) -> None:
+        if self._local_numeric_values_stack:
+            self._local_numeric_values_stack[-1][local_name] = value
+
     @staticmethod
     def _is_none_literal(node: ast.AST) -> bool:
         return isinstance(node, ast.Constant) and node.value is None
 
     def _literal_return(self, node: ast.AST) -> tuple[str, str] | None:
+        return self._literal_value(node)
+
+    def _literal_value(self, node: ast.AST) -> tuple[str, str] | None:
         match node:
             case ast.Constant(value=bool(value)):
                 return "bool", str(value)
@@ -898,6 +1161,114 @@ class PythonFactExtractor(ast.NodeVisitor):
                 return "set", self._expression_repr(node)
             case _:
                 return None
+
+    @staticmethod
+    def _numeric_literal(node: ast.AST) -> int | None:
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, int)
+            and not isinstance(node.value, bool)
+        ):
+            return node.value
+        return None
+
+    def _numeric_bound_value(self, node: ast.AST) -> int | None:
+        numeric_literal = self._numeric_literal(node)
+        if numeric_literal is not None:
+            return numeric_literal
+        if isinstance(node, ast.Name):
+            return self._get_numeric_assignment(node.id)
+        return None
+
+    def _add_expression_numeric_facts(self, caller: str, node: ast.AST) -> None:
+        for child in ast.walk(node):
+            numeric_literal = self._numeric_literal(child)
+            if numeric_literal is not None:
+                self.facts.add(
+                    Fact(
+                        "numeric_literal",
+                        (self.module_name, caller, numeric_literal, child.lineno),
+                    )
+                )
+            if isinstance(child, ast.Call):
+                callee = self._render_expr(child.func)
+                if callee == "len" and child.args:
+                    self.facts.add(
+                        Fact(
+                            "len_call",
+                            (
+                                self.module_name,
+                                caller,
+                                self._expression_repr(child.args[0]),
+                                child.lineno,
+                            ),
+                        )
+                    )
+
+    def _string_composition_kind(self, node: ast.AST) -> str | None:
+        if isinstance(node, ast.JoinedStr):
+            return "fstring"
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            if self._looks_string_expr(node.left) or self._looks_string_expr(node.right):
+                return "concat"
+        if isinstance(node, ast.Call):
+            callee = self._render_expr(node.func)
+            if callee and callee.endswith(".join"):
+                return "join"
+            if callee and callee.endswith(".format"):
+                return "format"
+        return None
+
+    def _looks_string_expr(self, node: ast.AST) -> bool:
+        if isinstance(node, (ast.JoinedStr, ast.Constant)) and isinstance(
+            getattr(node, "value", ""), str
+        ):
+            return True
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return self._looks_string_expr(node.left) or self._looks_string_expr(node.right)
+        return False
+
+    def _bounded_expr_repr(self, node: ast.AST) -> str | None:
+        if isinstance(node, ast.Call) and self._render_expr(node.func) == "len" and node.args:
+            return f"len({self._expression_repr(node.args[0])})"
+        return self._render_expr(node)
+
+    @staticmethod
+    def _compare_op_name(node: ast.cmpop) -> str | None:
+        if isinstance(node, ast.Lt):
+            return "lt"
+        if isinstance(node, ast.LtE):
+            return "le"
+        if isinstance(node, ast.Gt):
+            return "gt"
+        if isinstance(node, ast.GtE):
+            return "ge"
+        if isinstance(node, ast.Eq):
+            return "eq"
+        if isinstance(node, ast.NotEq):
+            return "ne"
+        return None
+
+    @staticmethod
+    def _reverse_compare_op_name(node: ast.cmpop) -> str | None:
+        if isinstance(node, ast.Lt):
+            return "gt"
+        if isinstance(node, ast.LtE):
+            return "ge"
+        if isinstance(node, ast.Gt):
+            return "lt"
+        if isinstance(node, ast.GtE):
+            return "le"
+        if isinstance(node, ast.Eq):
+            return "eq"
+        if isinstance(node, ast.NotEq):
+            return "ne"
+        return None
+
+    def _slice_upper_bound(self, node: ast.AST) -> int | None:
+        if isinstance(node, ast.Slice) and node.upper is not None:
+            return self._numeric_bound_value(node.upper)
+        return None
 
     @staticmethod
     def _last_name(rendered: str | None) -> str | None:

@@ -16,6 +16,7 @@ MODELS = {
     "effect": ROOT / "rule_layer" / "dataclass_effect_model.dl",
     "deduction": ROOT / "rule_layer" / "dataclass_deduction_model.dl",
     "test": ROOT / "rule_layer" / "dataclass_test_model.dl",
+    "semantic": ROOT / "rule_layer" / "semantic_model.dl",
 }
 
 
@@ -67,6 +68,7 @@ def write_summary(work_dir: Path) -> Path:
     effect_dir = work_dir / "effect_out"
     deduction_dir = work_dir / "deduction_out"
     test_dir = work_dir / "test_out"
+    semantic_dir = work_dir / "semantic_out"
 
     modeled_dataclasses = read_tsv_rows(schema_dir / "modeled_dataclass.csv")
     dataclass_shapes = read_tsv_rows(schema_dir / "dataclass_shape.csv")
@@ -107,6 +109,30 @@ def write_summary(work_dir: Path) -> Path:
         test_dir / "frozen_contains_mutable_field.csv"
     )
     override_contracts = read_tsv_rows(test_dir / "override_dataclass_contract.csv")
+    semantic_field_flows = read_tsv_rows(semantic_dir / "semantic_field_flow.csv")
+    composed_semantic_flows = read_tsv_rows(
+        semantic_dir / "composed_semantic_field_flow.csv"
+    )
+    observable_required_fields = read_tsv_rows(
+        semantic_dir / "observable_required_field.csv"
+    )
+    lossy_required_fields = read_tsv_rows(
+        semantic_dir / "lossy_required_field_candidate.csv"
+    )
+    dataclass_bool_literals = read_tsv_rows(semantic_dir / "dataclass_bool_literal.csv")
+    dataclass_string_literals = read_tsv_rows(
+        semantic_dir / "dataclass_string_literal.csv"
+    )
+    string_composition_targets = read_tsv_rows(
+        semantic_dir / "string_composition_target.csv"
+    )
+    numeric_bounds = read_tsv_rows(semantic_dir / "numeric_bound.csv")
+    boundary_test_candidates = read_tsv_rows(
+        semantic_dir / "boundary_test_candidate.csv"
+    )
+    numeric_bound_conflicts = read_tsv_rows(
+        semantic_dir / "numeric_bound_conflict_candidate.csv"
+    )
 
     effect_counts = Counter(row[2] for row in effectful_dataclasses if len(row) >= 3)
 
@@ -122,6 +148,10 @@ def write_summary(work_dir: Path) -> Path:
         f"- Class/dataclass role links: {len(class_method_uses_dataclass)}",
         f"- Method dataclass transformations: {len(method_dataclass_transforms)}",
         f"- Field-to-constructor-arg flows: {len(field_to_constructor_args)}",
+        f"- Semantic field flows: {len(semantic_field_flows)}",
+        f"- Composed semantic field flows: {len(composed_semantic_flows)}",
+        f"- Observable required fields: {len(observable_required_fields)}",
+        f"- Numeric boundary candidates: {len(boundary_test_candidates)}",
         "",
     ]
 
@@ -236,6 +266,75 @@ def write_summary(work_dir: Path) -> Path:
             )
         lines.append("")
 
+    append_section(
+        lines,
+        "## Semantic Field Flows",
+        semantic_field_flows,
+        lambda row: (
+            f"- `{row[2]}.{row[3]}.{row[4]}` -> "
+            f"`{row[5]}.{row[6]}.{row[7]}` via `{row[0]}.{row[1]}` "
+            f"(`{row[8]}`)"
+        ),
+    )
+    append_section(
+        lines,
+        "## Composed Semantic Field Flows",
+        composed_semantic_flows,
+        lambda row: f"- `{row[0]}.{row[1]}.{row[2]}` => `{row[3]}.{row[4]}.{row[5]}`",
+    )
+    append_section(
+        lines,
+        "## Observable Required Fields",
+        observable_required_fields,
+        lambda row: (
+            f"- `{row[2]}.{row[3]}.{row[4]}` is observable as "
+            f"`{row[5]}.{row[6]}.{row[7]}` via `{row[0]}.{row[1]}`"
+        ),
+    )
+    append_section(
+        lines,
+        "## Lossy Required Field Candidates",
+        lossy_required_fields,
+        lambda row: (
+            f"- `{row[2]}.{row[3]}.{row[4]}` has no detected flow to "
+            f"`{row[5]}.{row[6]}` in `{row[0]}.{row[1]}`"
+        ),
+    )
+
+    if dataclass_bool_literals or dataclass_string_literals or string_composition_targets:
+        lines.append("## Literal and String Semantics")
+        lines.append("")
+        for row in dataclass_bool_literals[:20]:
+            lines.append(
+                f"- Bool literal: `{row[2]}.{row[3]}.{row[4]}` = `{row[5]}` in `{row[0]}.{row[1]}`"
+            )
+        for row in dataclass_string_literals[:20]:
+            lines.append(
+                f"- String literal: `{row[2]}.{row[3]}.{row[4]}` = `{row[5]}` in `{row[0]}.{row[1]}`"
+            )
+        for row in string_composition_targets[:20]:
+            lines.append(
+                f"- String composition: `{row[2]}.{row[3]}.{row[4]}` uses `{row[5]}` in `{row[0]}.{row[1]}`"
+            )
+        lines.append("")
+
+    if numeric_bounds or boundary_test_candidates or numeric_bound_conflicts:
+        lines.append("## Numeric Semantics")
+        lines.append("")
+        for row in numeric_bounds[:20]:
+            lines.append(
+                f"- Bound: `{row[2]}` has `{row[3]}` `{row[4]}` in `{row[0]}.{row[1]}` at line {row[5]}"
+            )
+        for row in boundary_test_candidates[:20]:
+            lines.append(
+                f"- Boundary test: `{row[2]}` `{row[3]}` -> `{row[4]}` in `{row[0]}.{row[1]}`"
+            )
+        for row in numeric_bound_conflicts[:20]:
+            lines.append(
+                f"- Conflicting bounds: `{row[2]}` lower `{row[3]}` exceeds upper `{row[4]}` in `{row[0]}.{row[1]}`"
+            )
+        lines.append("")
+
     if frozen_mutable_fields or override_contracts:
         lines.append("## Design Review Candidates")
         lines.append("")
@@ -266,6 +365,7 @@ def main() -> None:
         "effect": work_dir / "effect_out",
         "deduction": work_dir / "deduction_out",
         "test": work_dir / "test_out",
+        "semantic": work_dir / "semantic_out",
     }
 
     if shutil.which("souffle") is None:

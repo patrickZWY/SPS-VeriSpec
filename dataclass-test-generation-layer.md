@@ -1,7 +1,7 @@
 # Dataclass Test Generation Layer
 
-This file describes the next modeling layer after the current dataclass
-schema/effect/dataflow rules.
+This file describes the test-target and semantic modeling layers after the
+dataclass schema/effect/dataflow rules.
 
 The current rules can answer questions like:
 
@@ -14,6 +14,9 @@ That is useful, but it is not enough for generating tests that expose bad
 dataclass design or behavior bugs. Test generation needs stronger semantic
 candidates: mutability risks, constructor boundary conditions, class/dataclass
 roles, method-level transformation behavior, and field-level influence.
+The current implementation now also derives conservative semantic candidates
+from composed field flow, literal constructor values, string composition, and
+numeric bounds.
 
 ## Goal
 
@@ -29,6 +32,11 @@ Examples:
   subset of required fields.
 - A subclass overrides a method that transforms the same input dataclass into a
   different output dataclass.
+- A required input field is observable in a string-valued output field.
+- A required input field appears lossy in a transformation.
+- A status/result dataclass is constructed with explicit boolean literals.
+- A comparison or slice bound implies boundary cases such as `bound - 1`,
+  `bound`, and `bound + 1`.
 
 ## Current facts already useful for this
 
@@ -49,6 +57,15 @@ The extractor already emits enough facts for a first version:
 - `calls(Module, QualifiedName, CalleeName, LineNumber)`
 - `instantiates(Module, QualifiedName, ClassName, LineNumber)`
 - `function_name(Module, QualifiedName, Name)`
+- `literal_assigned(Module, QualifiedName, LocalName, LiteralKind, LiteralValue, LineNumber)`
+- `constructor_arg_literal(Module, QualifiedName, ConstructedClass, ArgName, LiteralKind, LiteralValue, LineNumber)`
+- `return_constructor_arg_literal(Module, QualifiedName, ConstructedClass, ArgName, LiteralKind, LiteralValue, LineNumber)`
+- `constructor_arg_string_composition(Module, QualifiedName, ConstructedClass, ArgName, CompositionKind, LineNumber)`
+- `return_arg_string_composition(Module, QualifiedName, ConstructedClass, ArgName, CompositionKind, LineNumber)`
+- `numeric_assignment(Module, QualifiedName, LocalName, Value, LineNumber)`
+- `len_call(Module, QualifiedName, Expression, LineNumber)`
+- `numeric_compare(Module, QualifiedName, Expression, Op, Value, LineNumber)`
+- `string_slice_upper_bound(Module, QualifiedName, Expression, UpperBound, LineNumber)`
 
 ## Derived dataclass design facts
 
@@ -230,8 +247,28 @@ Suggested interaction kinds:
 - `validates`: a method returns an error/result dataclass based on input field checks.
 - `publishes`: a method consumes a dataclass and performs network effects.
 
-The first three can mostly be derived today. The last four need richer AST
-facts about conditions, constructor keyword arguments, and return branches.
+The first four are implemented in generic form. `validates` and similar
+guarded-return properties still need branch-local return and control-dependence
+facts to reduce false positives.
+
+## Semantic facts now implemented
+
+The generic semantic model is `rule_layer/semantic_model.dl`.
+
+It emits:
+
+- `semantic_field_flow`: field-level influence from source dataclass fields to target dataclass fields.
+- `composed_semantic_field_flow`: transitive field-level influence across multiple transformations.
+- `observable_required_field`: required source fields that reach string-valued output fields.
+- `lossy_required_field_candidate`: required source fields with no detected flow to a returned dataclass.
+- `dataclass_bool_literal` and `dataclass_string_literal`: literal values assigned to dataclass fields through constructors.
+- `string_composition_target`: dataclass fields constructed with f-strings, joins, format calls, or simple concatenation.
+- `numeric_bound`: numeric comparison and slice bounds.
+- `boundary_test_candidate`: `below`, `at`, and `above` test values for each bound.
+- `numeric_bound_conflict_candidate`: inconsistent inclusive lower/upper-bound candidates.
+
+These relations are intentionally conservative. They are meant to generate
+candidate properties and tests, not to prove runtime behavior.
 
 ## Extractor support now implemented
 
@@ -248,9 +285,20 @@ The extractor now emits these test-generation facts:
 - `local_depends_on_field(Module, QualifiedName, LocalName, SourceParam, SourceField, LineNumber)`
 - `call_result_assigned(Module, QualifiedName, LocalName, CalleeName, LineNumber)`
 - `local_dataclass_value(Module, QualifiedName, LocalName, ClassName, LineNumber)`
+- `literal_assigned(Module, QualifiedName, LocalName, LiteralKind, LiteralValue, LineNumber)`
+- `constructor_arg_literal(Module, QualifiedName, ConstructedClass, ArgName, LiteralKind, LiteralValue, LineNumber)`
+- `return_constructor_arg_literal(Module, QualifiedName, ConstructedClass, ArgName, LiteralKind, LiteralValue, LineNumber)`
+- `constructor_arg_string_composition(Module, QualifiedName, ConstructedClass, ArgName, CompositionKind, LineNumber)`
+- `return_arg_string_composition(Module, QualifiedName, ConstructedClass, ArgName, CompositionKind, LineNumber)`
+- `numeric_literal(Module, QualifiedName, Value, LineNumber)`
+- `numeric_assignment(Module, QualifiedName, LocalName, Value, LineNumber)`
+- `len_call(Module, QualifiedName, Expression, LineNumber)`
+- `numeric_compare(Module, QualifiedName, Expression, Op, Value, LineNumber)`
+- `string_slice_upper_bound(Module, QualifiedName, Expression, UpperBound, LineNumber)`
 
 These are sufficient for a first generic test-target model in
-`rule_layer/dataclass_test_model.dl`.
+`rule_layer/dataclass_test_model.dl` and the first semantic model in
+`rule_layer/semantic_model.dl`.
 
 ## Remaining extractor upgrades
 
@@ -261,6 +309,8 @@ Useful next upgrades:
 - `resolved_return_type_ref(Module, QualifiedName, TypeModule, TypeName)`
 - more precise call-boundary flow summaries so arbitrary call results do not over-approximate downstream constructor arguments
 - branch-local return facts that connect a condition to a specific returned constructor
+- CFG/control-dependence facts for validation and guarded-effect reasoning
+- lightweight alias/points-to summaries for local variables and object fields
 
 The most important implemented fact is `field_flows_to_constructor_arg`. It
 now includes direct field references and intraprocedural local dependencies, so
@@ -290,12 +340,15 @@ The current project would get test targets such as:
 - Run the same `Post` cases through every `SocialPoster.publish` implementation and assert each returns `PostResult`.
 - Generate Mastodon-specific tests for `Post.text` and `Post.tags` flowing into `PreparedCaption` and then `CaptionThread`.
 - Use inferred local/call-result reads to avoid flagging `PostResult.success` as unread when orchestration code checks publish results.
+- Generate boundary tests from numeric bounds such as string length checks and slice truncation.
+- Assert result/status literals such as successful and failed `PostResult.success` paths.
+- Review lossy required-field candidates where a required input field does not reach the returned dataclass.
 
 ## Bottom line
 
 The next step should not be more generic dataflow. It should be a
-class/dataclass interaction model that preserves enough structure to generate
-tests:
+class/dataclass interaction and semantic model that preserves enough structure
+to generate tests:
 
 ```text
 class role
@@ -303,5 +356,7 @@ class role
 + field optionality/default/frozen metadata
 + field-to-constructor-argument flow
 + inheritance/override contracts
++ semantic field flow
++ literal and numeric bounds
 = useful test targets
 ```

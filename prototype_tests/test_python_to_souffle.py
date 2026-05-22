@@ -245,6 +245,63 @@ def run(poster: Poster, post: Post):
         )
         self.assertIn('returns_none("sample", "run", 18).', rendered)
 
+    def test_extracts_semantic_value_and_numeric_facts(self) -> None:
+        facts = extract_facts_from_source(
+            """
+from dataclasses import dataclass
+
+@dataclass
+class Post:
+    text: str
+
+@dataclass
+class Result:
+    success: bool
+    error: str | None = None
+
+def make(name: str) -> Post:
+    limit = 12
+    text = f"Meet {name}"
+    if len(text) > limit:
+        text = text[:limit]
+    return Post(text=text)
+
+def publish() -> Result:
+    return Result(success=False, error="missing media")
+            """.strip(),
+            module_name="sample",
+        )
+        rendered = {fact.render() for fact in facts}
+
+        self.assertIn(
+            'numeric_assignment("sample", "make", "limit", 12, 13).',
+            rendered,
+        )
+        self.assertIn(
+            'literal_assigned("sample", "make", "limit", "number", "12", 13).',
+            rendered,
+        )
+        self.assertIn(
+            'len_call("sample", "make", "text", 15).',
+            rendered,
+        )
+        self.assertIn(
+            'numeric_compare("sample", "make", "len(text)", "gt", 12, 15).',
+            rendered,
+        )
+        self.assertIn(
+            'string_slice_upper_bound("sample", "make", "text", 12, 16).',
+            rendered,
+        )
+        self.assertIn(
+            'return_constructor_arg_literal("sample", "publish", "Result", "success", "bool", "False", 20).',
+            rendered,
+        )
+        self.assertIn(
+            'return_constructor_arg_literal("sample", "publish", "Result", "error", "str", "missing media", 20).',
+            rendered,
+        )
+
     def test_resolves_imported_class_references_across_project(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

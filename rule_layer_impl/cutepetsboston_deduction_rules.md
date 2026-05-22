@@ -16,6 +16,10 @@ python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-proj
 - Direct dataclass transformations: 12
 - Reachable dataclass transformation pairs: 9
 - Dataclass-linked functions: 66
+- Semantic field flows: 54
+- Composed semantic field flows: 86
+- Observable required fields: 21
+- Numeric boundary candidates: 18
 
 ## Direct transformation rules
 
@@ -87,12 +91,25 @@ still extractor precision gaps around generic pipeline values and helper
 renderer callbacks. `PostResult.success`, `CaptionThread.main_caption`, and
 `CaptionThread.replies` are now inferred through local/call-result reads.
 
+## Semantic review candidates
+
+The semantic model now adds project-specific review targets on top of the
+deduction graph:
+
+- required pet fields such as `name`, `breed`, `species`, and `location` are observable through `Post.text` or `Post.alt_text`
+- `Post.text` and `Post.tags` compose into Mastodon caption/thread fields through `PreparedCaption`
+- `PostResult.success` is observed as explicit `True` and `False` constructor literals across publish paths
+- string-length and truncation code produces boundary candidates, for example around description cleanup and platform caption limits
+- lossy required-field candidates identify transforms where a required field has no detected flow into the returned dataclass
+
 ## Project-specific verification targets
 
 - Verify that every concrete `SocialPoster.publish` returns `PostResult` on all success and failure paths.
 - Verify that platform publish paths either require or gracefully handle missing `Post.image_url`.
 - Verify that `AdoptablePet` records selected for posting always have `image_url` and `adoption_url`.
 - Verify that Mastodon caption splitting preserves the relation `Post.text -> PreparedCaption.caption_text -> CaptionThread.main_caption/replies`.
+- Verify boundary behavior for discovered numeric limits such as description truncation and platform caption limits.
+- Verify success/failure result literals align with the concrete branch behavior that constructs them.
 - Verify that Slack failure notification remains outside the dataclass transformation graph unless a future alert-result dataclass is introduced.
 
 ## Recommended extractor improvements for this project
@@ -100,4 +117,5 @@ renderer callbacks. `PostResult.success`, `CaptionThread.main_caption`, and
 - Resolve generic type arguments for `PipelineResult[CaptionThread]`.
 - Add better class identity resolution across imports to avoid name-only joins.
 - Add branch-local return facts that connect specific optional-field checks to specific returned constructors.
+- Add CFG/control-dependence facts for validation and guarded-effect reasoning.
 - Add more precise call-boundary summaries so SDK/API return values do not over-approximate semantic influence.
