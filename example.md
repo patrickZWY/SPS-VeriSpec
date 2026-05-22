@@ -134,5 +134,19 @@ Examples:
 - Add more precise call-boundary summaries so arbitrary SDK/API return values do not over-approximate semantic influence.
 - Add branch-local return facts that connect a condition to a specific returned constructor.
 - Preserve key literal data such as numbers, bounds, limits, and thresholds during fact extraction so generated tests can target boundary values.
+- Examine the current Souffle rules for precision, redundancy, performance, and whether their derived relations are actually useful for test generation.
 - Generate executable property/fuzz tests directly from the test-target CSV outputs.
 - Feed test execution results back into the knowledge base.
+
+# Souffle features to explore
+
+- Stratified negation: useful for review candidates such as unread required fields, missing overrides, untested boundaries, and terminal dataclasses.
+- Aggregates: useful for summaries and prioritization, such as counting transformations per dataclass or effects per method.
+- Records: useful for packaging structured metadata such as field shapes, dataclass shapes, effect events, and function links.
+- Transitive recursion: useful for reachable dataclass transformations, inheritance chains, call-chain reachability, and multi-step dataflow.
+- Components: useful for keeping the growing rule layer modular, for example separating schema, class, transform, and test-target rules.
+- Functors: useful for limited normalization or classification, but should be used carefully so Souffle does not become string-processing glue.
+- Eqrel / equivalence relations: useful for import aliases, type identity resolution, and alias-like relations between names.
+- Subsumption or lattice-style reasoning: potentially useful later for ranking candidate severity or merging abstract states.
+- Choice: useful for representative examples and compact test-seed selection, but not for core analysis where completeness matters.
+- Profile to find optimal order of atoms in the body of a rule.

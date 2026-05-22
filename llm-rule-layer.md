@@ -21,7 +21,7 @@ abstractions over control-flow encodings.
 
 ## What the LLM should optimize for
 
-- Genericity across Python projects.
+- Generality across Python projects.
 - Explicit Souffle syntax.
 - Small composable relations.
 - Structured Souffle types such as records when the model has real structure.
