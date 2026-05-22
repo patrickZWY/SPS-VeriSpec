@@ -160,54 +160,72 @@ frozen_contains_mutable_field(M, C, F, Factory) :-
 
 class_method_uses_dataclass(CM, Class, Q, DM, D, "accepts") :-
   method_of_class(CM, Class, Q),
-  function_param_type_ref(CM, Q, _, D),
+  resolved_param_type_ref(CM, Q, _, DM, D),
   dataclass(DM, D, _, _).
 
 class_method_uses_dataclass(CM, Class, Q, DM, D, "returns") :-
   method_of_class(CM, Class, Q),
-  function_return_type_ref(CM, Q, D),
+  resolved_return_type_ref(CM, Q, DM, D),
   dataclass(DM, D, _, _).
 
 class_method_uses_dataclass(CM, Class, Q, DM, D, "constructs") :-
   method_of_class(CM, Class, Q),
-  instantiates(CM, Q, D, _),
+  resolved_instantiates(CM, Q, DM, D, _),
   dataclass(DM, D, _, _).
 
 method_dataclass_transform(CM, Class, Q, SM, Source, TM, Target) :-
   method_of_class(CM, Class, Q),
-  function_param_type_ref(CM, Q, _, Source),
-  function_return_type_ref(CM, Q, Target),
+  resolved_param_type_ref(CM, Q, _, SM, Source),
+  resolved_return_type_ref(CM, Q, TM, Target),
   dataclass(SM, Source, _, _),
   dataclass(TM, Target, _, _),
+  SM != TM.
+
+method_dataclass_transform(CM, Class, Q, SM, Source, TM, Target) :-
+  method_of_class(CM, Class, Q),
+  resolved_param_type_ref(CM, Q, _, SM, Source),
+  resolved_return_type_ref(CM, Q, TM, Target),
+  dataclass(SM, Source, _, _),
+  dataclass(TM, Target, _, _),
+  SM = TM,
   Source != Target.
 
 method_dataclass_transform(CM, Class, Q, SM, Source, TM, Target) :-
   method_of_class(CM, Class, Q),
-  function_param_type_ref(CM, Q, _, Source),
-  returns_dataclass(CM, Q, Target, _),
+  resolved_param_type_ref(CM, Q, _, SM, Source),
+  resolved_returns_dataclass(CM, Q, TM, Target, _),
   dataclass(SM, Source, _, _),
   dataclass(TM, Target, _, _),
+  SM != TM.
+
+method_dataclass_transform(CM, Class, Q, SM, Source, TM, Target) :-
+  method_of_class(CM, Class, Q),
+  resolved_param_type_ref(CM, Q, _, SM, Source),
+  resolved_returns_dataclass(CM, Q, TM, Target, _),
+  dataclass(SM, Source, _, _),
+  dataclass(TM, Target, _, _),
+  SM = TM,
   Source != Target.
 
 method_transform_reads_field(CM, Class, Q, Source, Field, Target) :-
   method_dataclass_transform(CM, Class, Q, _, Source, _, Target),
-  function_param_type_ref(CM, Q, Param, Source),
+  resolved_param_type_ref(CM, Q, Param, _, Source),
   attribute_read(CM, Q, Param, Field, _).
 
 method_field_to_constructor_arg(CM, Class, Q, Source, SourceField, Target, TargetArg) :-
   method_dataclass_transform(CM, Class, Q, _, Source, _, Target),
-  function_param_type_ref(CM, Q, Param, Source),
+  resolved_param_type_ref(CM, Q, Param, _, Source),
   field_flows_to_constructor_arg(CM, Q, Param, SourceField, Target, TargetArg, _).
 
 method_field_to_constructor_arg(CM, Class, Q, Source, SourceField, Target, TargetArg) :-
   method_dataclass_transform(CM, Class, Q, _, Source, _, Target),
-  function_param_type_ref(CM, Q, Param, Source),
+  resolved_param_type_ref(CM, Q, Param, _, Source),
   field_flows_to_constructor_arg(CM, Q, Local, SourceField, Target, TargetArg, _),
   local_depends_on_field(CM, Q, Local, Param, SourceField, _).
 
 optional_field_read_in_condition(CM, Class, Q, DM, D, Field) :-
   method_of_class(CM, Class, Q),
-  function_param_type_ref(CM, Q, Param, D),
+  resolved_param_type_ref(CM, Q, Param, DM, D),
   dataclass(DM, D, _, _),
   optional_dataclass_field(DM, D, Field),
   condition_reads_attribute(CM, Q, Param, Field, _).

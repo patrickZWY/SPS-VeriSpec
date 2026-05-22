@@ -43,7 +43,13 @@
 .decl factory_backed_field(module_name:symbol, class_name:symbol, field_name:symbol, factory_name:symbol)
 .output factory_backed_field
 
-.decl dataclass_dependency(module_name:symbol, class_name:symbol, field_name:symbol, target_class:symbol)
+.decl dataclass_dependency(
+  module_name:symbol,
+  class_name:symbol,
+  field_name:symbol,
+  target_module:symbol,
+  target_class:symbol
+)
 .output dataclass_dependency
 
 .decl dataclass_shape(module_name:symbol, class_name:symbol, shape:DataclassShape)
@@ -81,9 +87,15 @@ defaulted_field(Module, Class, FieldName, DefaultKind) :-
 factory_backed_field(Module, Class, FieldName, FactoryName) :-
   dataclass_field_default_factory(Module, Class, FieldName, FactoryName).
 
-dataclass_dependency(Module, Class, FieldName, TargetClass) :-
-  dataclass_field_type_ref(Module, Class, FieldName, TargetClass),
-  dataclass(_, TargetClass, _, _),
+dataclass_dependency(Module, Class, FieldName, TargetModule, TargetClass) :-
+  resolved_dataclass_field_type_ref(Module, Class, FieldName, TargetModule, TargetClass),
+  dataclass(TargetModule, TargetClass, _, _),
+  Module != TargetModule.
+
+dataclass_dependency(Module, Class, FieldName, TargetModule, TargetClass) :-
+  resolved_dataclass_field_type_ref(Module, Class, FieldName, TargetModule, TargetClass),
+  dataclass(TargetModule, TargetClass, _, _),
+  Module = TargetModule,
   Class != TargetClass.
 
 dataclass_shape(

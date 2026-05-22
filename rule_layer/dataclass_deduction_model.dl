@@ -86,33 +86,33 @@
 .output effectful_dataclass
 
 function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, "param_type", ParamName) :-
-  function_param_type_ref(FunctionModule, QualifiedName, ParamName, Class),
+  resolved_param_type_ref(FunctionModule, QualifiedName, ParamName, DataclassModule, Class),
   dataclass(DataclassModule, Class, _, _).
 
 function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, "return_type", Class) :-
-  function_return_type_ref(FunctionModule, QualifiedName, Class),
+  resolved_return_type_ref(FunctionModule, QualifiedName, DataclassModule, Class),
   dataclass(DataclassModule, Class, _, _).
 
 function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, "returns_constructor", Class) :-
-  returns_dataclass(FunctionModule, QualifiedName, Class, _),
+  resolved_returns_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, _),
   dataclass(DataclassModule, Class, _, _).
 
 function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, "constructs", Class) :-
-  instantiates(FunctionModule, QualifiedName, Class, _),
+  resolved_instantiates(FunctionModule, QualifiedName, DataclassModule, Class, _),
   dataclass(DataclassModule, Class, _, _).
 
 field_use_in_function(FunctionModule, QualifiedName, DataclassModule, Class, FieldName, "read", Line) :-
-  function_param_type_ref(FunctionModule, QualifiedName, ParamName, Class),
+  resolved_param_type_ref(FunctionModule, QualifiedName, ParamName, DataclassModule, Class),
   dataclass_field(DataclassModule, Class, FieldName, _, _, _, _, _, _),
   attribute_read(FunctionModule, QualifiedName, ParamName, FieldName, Line).
 
 field_use_in_function(FunctionModule, QualifiedName, DataclassModule, Class, FieldName, "write", Line) :-
-  function_param_type_ref(FunctionModule, QualifiedName, ParamName, Class),
+  resolved_param_type_ref(FunctionModule, QualifiedName, ParamName, DataclassModule, Class),
   dataclass_field(DataclassModule, Class, FieldName, _, _, _, _, _, _),
   attribute_write(FunctionModule, QualifiedName, ParamName, FieldName, Line).
 
 field_use_in_function(FunctionModule, QualifiedName, DataclassModule, Class, FieldName, "read", Line) :-
-  local_dataclass_value(FunctionModule, QualifiedName, LocalName, Class, _),
+  resolved_local_dataclass_value(FunctionModule, QualifiedName, LocalName, DataclassModule, Class, _),
   dataclass_field(DataclassModule, Class, FieldName, _, _, _, _, _, _),
   attribute_read(FunctionModule, QualifiedName, LocalName, FieldName, Line).
 
@@ -122,35 +122,35 @@ field_use_in_function(FunctionModule, QualifiedName, DataclassModule, Class, Fie
 inferred_local_dataclass_read(FunctionModule, QualifiedName, DataclassModule, Class, LocalName, FieldName, Line) :-
   call_result_assigned(FunctionModule, QualifiedName, LocalName, CalleeName, _),
   function_name(TargetModule, TargetQualifiedName, CalleeName),
-  function_return_type_ref(TargetModule, TargetQualifiedName, Class),
+  resolved_return_type_ref(TargetModule, TargetQualifiedName, DataclassModule, Class),
   dataclass_field(DataclassModule, Class, FieldName, _, _, _, _, _, _),
   attribute_read(FunctionModule, QualifiedName, LocalName, FieldName, Line).
 
 dataclass_transform(FunctionModule, QualifiedName, SourceModule, SourceClass, TargetModule, TargetClass) :-
-  function_param_type_ref(FunctionModule, QualifiedName, _, SourceClass),
-  function_return_type_ref(FunctionModule, QualifiedName, TargetClass),
+  resolved_param_type_ref(FunctionModule, QualifiedName, _, SourceModule, SourceClass),
+  resolved_return_type_ref(FunctionModule, QualifiedName, TargetModule, TargetClass),
   dataclass(SourceModule, SourceClass, _, _),
   dataclass(TargetModule, TargetClass, _, _),
   SourceModule != TargetModule.
 
 dataclass_transform(FunctionModule, QualifiedName, SourceModule, SourceClass, TargetModule, TargetClass) :-
-  function_param_type_ref(FunctionModule, QualifiedName, _, SourceClass),
-  function_return_type_ref(FunctionModule, QualifiedName, TargetClass),
+  resolved_param_type_ref(FunctionModule, QualifiedName, _, SourceModule, SourceClass),
+  resolved_return_type_ref(FunctionModule, QualifiedName, TargetModule, TargetClass),
   dataclass(SourceModule, SourceClass, _, _),
   dataclass(TargetModule, TargetClass, _, _),
   SourceModule = TargetModule,
   SourceClass != TargetClass.
 
 dataclass_transform(FunctionModule, QualifiedName, SourceModule, SourceClass, TargetModule, TargetClass) :-
-  function_param_type_ref(FunctionModule, QualifiedName, _, SourceClass),
-  returns_dataclass(FunctionModule, QualifiedName, TargetClass, _),
+  resolved_param_type_ref(FunctionModule, QualifiedName, _, SourceModule, SourceClass),
+  resolved_returns_dataclass(FunctionModule, QualifiedName, TargetModule, TargetClass, _),
   dataclass(SourceModule, SourceClass, _, _),
   dataclass(TargetModule, TargetClass, _, _),
   SourceModule != TargetModule.
 
 dataclass_transform(FunctionModule, QualifiedName, SourceModule, SourceClass, TargetModule, TargetClass) :-
-  function_param_type_ref(FunctionModule, QualifiedName, _, SourceClass),
-  returns_dataclass(FunctionModule, QualifiedName, TargetClass, _),
+  resolved_param_type_ref(FunctionModule, QualifiedName, _, SourceModule, SourceClass),
+  resolved_returns_dataclass(FunctionModule, QualifiedName, TargetModule, TargetClass, _),
   dataclass(SourceModule, SourceClass, _, _),
   dataclass(TargetModule, TargetClass, _, _),
   SourceModule = TargetModule,

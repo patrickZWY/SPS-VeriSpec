@@ -11,11 +11,22 @@
 .decl imports(module_name:symbol, imported_symbol:symbol)
 .input imports
 
+.decl import_alias(module_name:symbol, local_name:symbol, qualified_name:symbol)
+.input import_alias
+
 .decl defines_class(module_name:symbol, class_name:symbol)
 .input defines_class
 
 .decl extends(module_name:symbol, class_name:symbol, base_name:symbol)
 .input extends
+
+.decl resolved_extends(
+  module_name:symbol,
+  class_name:symbol,
+  base_module:symbol,
+  base_name:symbol
+)
+.input resolved_extends
 
 .decl dataclass(module_name:symbol, class_name:symbol, is_frozen:number, line:number)
 .input dataclass
@@ -49,6 +60,15 @@
 )
 .input dataclass_field_type_ref
 
+.decl resolved_dataclass_field_type_ref(
+  module_name:symbol,
+  class_name:symbol,
+  field_name:symbol,
+  type_module:symbol,
+  type_name:symbol
+)
+.input resolved_dataclass_field_type_ref
+
 .decl method_of_class(module_name:symbol, class_name:symbol, qualified_name:symbol)
 .input method_of_class
 
@@ -70,6 +90,15 @@
 )
 .input function_param_type_ref
 
+.decl resolved_param_type_ref(
+  module_name:symbol,
+  qualified_name:symbol,
+  param_name:symbol,
+  type_module:symbol,
+  type_name:symbol
+)
+.input resolved_param_type_ref
+
 .decl function_return_type(
   module_name:symbol,
   qualified_name:symbol,
@@ -85,6 +114,14 @@
 )
 .input function_return_type_ref
 
+.decl resolved_return_type_ref(
+  module_name:symbol,
+  qualified_name:symbol,
+  type_module:symbol,
+  type_name:symbol
+)
+.input resolved_return_type_ref
+
 .decl returns_dataclass(
   module_name:symbol,
   qualified_name:symbol,
@@ -92,6 +129,15 @@
   line:number
 )
 .input returns_dataclass
+
+.decl resolved_returns_dataclass(
+  module_name:symbol,
+  qualified_name:symbol,
+  type_module:symbol,
+  type_name:symbol,
+  line:number
+)
+.input resolved_returns_dataclass
 
 .decl attribute_read(
   module_name:symbol,
@@ -138,6 +184,15 @@
 
 .decl instantiates(module_name:symbol, caller:symbol, class_name:symbol, line:number)
 .input instantiates
+
+.decl resolved_instantiates(
+  module_name:symbol,
+  caller:symbol,
+  type_module:symbol,
+  type_name:symbol,
+  line:number
+)
+.input resolved_instantiates
 
 .decl reads_env_var(module_name:symbol, caller:symbol, env_var:symbol, line:number)
 .input reads_env_var
@@ -230,3 +285,13 @@
   line:number
 )
 .input local_dataclass_value
+
+.decl resolved_local_dataclass_value(
+  module_name:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  type_module:symbol,
+  type_name:symbol,
+  line:number
+)
+.input resolved_local_dataclass_value

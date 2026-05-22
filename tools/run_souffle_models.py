@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from collections import Counter
 from pathlib import Path
+from typing import Callable
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +46,20 @@ def read_tsv_rows(path: Path) -> list[list[str]]:
         return []
     with path.open(encoding="utf-8", newline="") as handle:
         return [row for row in csv.reader(handle, delimiter="\t") if row]
+
+
+def append_section(
+    lines: list[str],
+    title: str,
+    rows: list[list[str]],
+    render_row: Callable[[list[str]], str],
+    limit: int = 20,
+) -> None:
+    if not rows:
+        return
+    lines.extend([title, ""])
+    lines.extend(render_row(row) for row in rows[:limit])
+    lines.append("")
 
 
 def write_summary(work_dir: Path) -> Path:
@@ -95,57 +110,49 @@ def write_summary(work_dir: Path) -> Path:
 
     effect_counts = Counter(row[2] for row in effectful_dataclasses if len(row) >= 3)
 
-    lines: list[str] = []
-    lines.append("# Souffle Model Summary")
-    lines.append("")
-    lines.append("## Inventory")
-    lines.append("")
-    lines.append(f"- Dataclasses discovered: {len(modeled_dataclasses)}")
-    lines.append(f"- Direct dataclass transformations: {len(direct_transforms)}")
-    lines.append(
-        f"- Reachable dataclass transformation pairs: {len(reachable_transforms)}"
+    lines = [
+        "# Souffle Model Summary",
+        "",
+        "## Inventory",
+        "",
+        f"- Dataclasses discovered: {len(modeled_dataclasses)}",
+        f"- Direct dataclass transformations: {len(direct_transforms)}",
+        f"- Reachable dataclass transformation pairs: {len(reachable_transforms)}",
+        f"- Dataclass-linked functions: {len(dataclass_functions)}",
+        f"- Class/dataclass role links: {len(class_method_uses_dataclass)}",
+        f"- Method dataclass transformations: {len(method_dataclass_transforms)}",
+        f"- Field-to-constructor-arg flows: {len(field_to_constructor_args)}",
+        "",
+    ]
+
+    append_section(
+        lines,
+        "## Dataclasses",
+        modeled_dataclasses,
+        lambda row: f"- `{row[0]}.{row[1]}` at line {row[3]} (`frozen={row[2]}`)",
     )
-    lines.append(f"- Dataclass-linked functions: {len(dataclass_functions)}")
-    lines.append(f"- Class/dataclass role links: {len(class_method_uses_dataclass)}")
-    lines.append(f"- Method dataclass transformations: {len(method_dataclass_transforms)}")
-    lines.append(f"- Field-to-constructor-arg flows: {len(field_to_constructor_args)}")
-    lines.append("")
-
-    if modeled_dataclasses:
-        lines.append("## Dataclasses")
-        lines.append("")
-        for row in modeled_dataclasses[:20]:
-            module_name, class_name, frozen, line = row
-            lines.append(
-                f"- `{module_name}.{class_name}` at line {line} (`frozen={frozen}`)"
-            )
-        lines.append("")
-
-    if dataclass_shapes:
-        lines.append("## Shapes")
-        lines.append("")
-        for row in dataclass_shapes[:10]:
-            module_name, class_name, shape = row
-            lines.append(f"- `{module_name}.{class_name}` -> `{shape}`")
-        lines.append("")
-
-    if direct_transforms:
-        lines.append("## Direct Transformations")
-        lines.append("")
-        for row in direct_transforms[:20]:
-            fn_module, qualified_name, src_module, src_class, tgt_module, tgt_class = row
-            lines.append(
-                f"- `{src_module}.{src_class} -> {tgt_module}.{tgt_class}` via `{fn_module}.{qualified_name}`"
-            )
-        lines.append("")
-
-    if reachable_transforms:
-        lines.append("## Reachable Transformations")
-        lines.append("")
-        for row in reachable_transforms[:20]:
-            src_module, src_class, tgt_module, tgt_class = row
-            lines.append(f"- `{src_module}.{src_class} => {tgt_module}.{tgt_class}`")
-        lines.append("")
+    append_section(
+        lines,
+        "## Shapes",
+        dataclass_shapes,
+        lambda row: f"- `{row[0]}.{row[1]}` -> `{row[2]}`",
+        limit=10,
+    )
+    append_section(
+        lines,
+        "## Direct Transformations",
+        direct_transforms,
+        lambda row: (
+            f"- `{row[2]}.{row[3]} -> {row[4]}.{row[5]}` "
+            f"via `{row[0]}.{row[1]}`"
+        ),
+    )
+    append_section(
+        lines,
+        "## Reachable Transformations",
+        reachable_transforms,
+        lambda row: f"- `{row[0]}.{row[1]} => {row[2]}.{row[3]}`",
+    )
 
     if bridge_dataclasses or entry_dataclasses or terminal_dataclasses:
         lines.append("## Topology")
@@ -158,22 +165,21 @@ def write_summary(work_dir: Path) -> Path:
             lines.append(f"- Terminal dataclass: `{row[0]}.{row[1]}`")
         lines.append("")
 
-    if field_to_transform:
-        lines.append("## Field-to-Transformation Relations")
-        lines.append("")
-        for row in field_to_transform[:20]:
-            src_module, src_class, field_name, tgt_module, tgt_class, qualified_name = row
-            lines.append(
-                f"- `{src_module}.{src_class}.{field_name}` contributes to `{tgt_module}.{tgt_class}` via `{qualified_name}`"
-            )
-        lines.append("")
-
-    if unread_required_fields:
-        lines.append("## Unread Required Fields")
-        lines.append("")
-        for row in unread_required_fields[:20]:
-            lines.append(f"- `{row[0]}.{row[1]}.{row[2]}`")
-        lines.append("")
+    append_section(
+        lines,
+        "## Field-to-Transformation Relations",
+        field_to_transform,
+        lambda row: (
+            f"- `{row[0]}.{row[1]}.{row[2]}` contributes to "
+            f"`{row[3]}.{row[4]}` via `{row[5]}`"
+        ),
+    )
+    append_section(
+        lines,
+        "## Unread Required Fields",
+        unread_required_fields,
+        lambda row: f"- `{row[0]}.{row[1]}.{row[2]}`",
+    )
 
     if effect_counts:
         lines.append("## Effect Kinds")
@@ -182,35 +188,33 @@ def write_summary(work_dir: Path) -> Path:
             lines.append(f"- `{effect_kind}`: {count}")
         lines.append("")
 
-    if class_method_uses_dataclass:
-        lines.append("## Class/Dataclass Roles")
-        lines.append("")
-        for row in class_method_uses_dataclass[:20]:
-            class_module, class_name, qualified_name, dc_module, dc_name, role = row
-            lines.append(
-                f"- `{class_module}.{qualified_name}` on `{class_name}` {role} `{dc_module}.{dc_name}`"
-            )
-        lines.append("")
-
-    if method_dataclass_transforms:
-        lines.append("## Method Dataclass Transformations")
-        lines.append("")
-        for row in method_dataclass_transforms[:20]:
-            class_module, class_name, qualified_name, src_module, src_class, tgt_module, tgt_class = row
-            lines.append(
-                f"- `{class_module}.{qualified_name}` on `{class_name}` transforms `{src_module}.{src_class}` to `{tgt_module}.{tgt_class}`"
-            )
-        lines.append("")
-
-    if field_to_constructor_args:
-        lines.append("## Field-to-Constructor-Arg Flows")
-        lines.append("")
-        for row in field_to_constructor_args[:20]:
-            class_module, class_name, qualified_name, src_class, src_field, tgt_class, tgt_arg = row
-            lines.append(
-                f"- `{class_module}.{qualified_name}` on `{class_name}` maps `{src_class}.{src_field}` to `{tgt_class}.{tgt_arg}`"
-            )
-        lines.append("")
+    append_section(
+        lines,
+        "## Class/Dataclass Roles",
+        class_method_uses_dataclass,
+        lambda row: (
+            f"- `{row[0]}.{row[2]}` on `{row[1]}` {row[5]} "
+            f"`{row[3]}.{row[4]}`"
+        ),
+    )
+    append_section(
+        lines,
+        "## Method Dataclass Transformations",
+        method_dataclass_transforms,
+        lambda row: (
+            f"- `{row[0]}.{row[2]}` on `{row[1]}` transforms "
+            f"`{row[3]}.{row[4]}` to `{row[5]}.{row[6]}`"
+        ),
+    )
+    append_section(
+        lines,
+        "## Field-to-Constructor-Arg Flows",
+        field_to_constructor_args,
+        lambda row: (
+            f"- `{row[0]}.{row[2]}` on `{row[1]}` maps "
+            f"`{row[3]}.{row[4]}` to `{row[5]}.{row[6]}`"
+        ),
+    )
 
     if optional_field_targets or required_field_targets or optional_condition_reads:
         lines.append("## Test Targets")
@@ -257,16 +261,17 @@ def main() -> None:
     project_root = Path(args.project_root).resolve()
     work_dir = Path(args.work_dir).resolve()
     facts_dir = work_dir / "facts"
-    schema_out = work_dir / "schema_out"
-    effect_out = work_dir / "effect_out"
-    deduction_out = work_dir / "deduction_out"
+    output_dirs = {
+        "schema": work_dir / "schema_out",
+        "effect": work_dir / "effect_out",
+        "deduction": work_dir / "deduction_out",
+        "test": work_dir / "test_out",
+    }
 
     if shutil.which("souffle") is None:
         raise SystemExit("souffle is not installed or not on PATH.")
 
-    test_out = work_dir / "test_out"
-
-    for path in (facts_dir, schema_out, effect_out, deduction_out, test_out):
+    for path in (facts_dir, *output_dirs.values()):
         path.mkdir(parents=True, exist_ok=True)
 
     extract_cmd = [
@@ -280,25 +285,17 @@ def main() -> None:
         extract_cmd.append("--include-tests")
     run_command(extract_cmd)
 
-    run_command(
-        ["souffle", "-F", str(facts_dir), "-D", str(schema_out), str(MODELS["schema"])]
-    )
-    run_command(
-        ["souffle", "-F", str(facts_dir), "-D", str(effect_out), str(MODELS["effect"])]
-    )
-    run_command(
-        [
-            "souffle",
-            "-F",
-            str(facts_dir),
-            "-D",
-            str(deduction_out),
-            str(MODELS["deduction"]),
-        ]
-    )
-    run_command(
-        ["souffle", "-F", str(facts_dir), "-D", str(test_out), str(MODELS["test"])]
-    )
+    for model_name, output_dir in output_dirs.items():
+        run_command(
+            [
+                "souffle",
+                "-F",
+                str(facts_dir),
+                "-D",
+                str(output_dir),
+                str(MODELS[model_name]),
+            ]
+        )
 
     summary_path = write_summary(work_dir)
     print(summary_path)

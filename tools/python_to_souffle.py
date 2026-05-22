@@ -15,8 +15,10 @@ SOUFFLE_SCHEMA: dict[str, tuple[str, ...]] = {
     "module": ("symbol",),
     "module_file": ("symbol", "symbol"),
     "imports": ("symbol", "symbol"),
+    "import_alias": ("symbol", "symbol", "symbol"),
     "defines_class": ("symbol", "symbol"),
     "extends": ("symbol", "symbol", "symbol"),
+    "resolved_extends": ("symbol", "symbol", "symbol", "symbol"),
     "dataclass": ("symbol", "symbol", "number", "number"),
     "dataclass_field": (
         "symbol",
@@ -31,12 +33,28 @@ SOUFFLE_SCHEMA: dict[str, tuple[str, ...]] = {
     ),
     "dataclass_field_default_factory": ("symbol", "symbol", "symbol", "symbol"),
     "dataclass_field_type_ref": ("symbol", "symbol", "symbol", "symbol"),
+    "resolved_dataclass_field_type_ref": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+    ),
     "method_of_class": ("symbol", "symbol", "symbol"),
     "function_param": ("symbol", "symbol", "symbol", "symbol", "number", "number"),
     "function_param_type_ref": ("symbol", "symbol", "symbol", "symbol"),
+    "resolved_param_type_ref": ("symbol", "symbol", "symbol", "symbol", "symbol"),
     "function_return_type": ("symbol", "symbol", "symbol", "number"),
     "function_return_type_ref": ("symbol", "symbol", "symbol"),
+    "resolved_return_type_ref": ("symbol", "symbol", "symbol", "symbol"),
     "returns_dataclass": ("symbol", "symbol", "symbol", "number"),
+    "resolved_returns_dataclass": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
     "attribute_read": ("symbol", "symbol", "symbol", "symbol", "number"),
     "attribute_write": ("symbol", "symbol", "symbol", "symbol", "number"),
     "handles_exception": ("symbol", "symbol", "symbol", "number"),
@@ -45,6 +63,7 @@ SOUFFLE_SCHEMA: dict[str, tuple[str, ...]] = {
     "function_name": ("symbol", "symbol", "symbol"),
     "calls": ("symbol", "symbol", "symbol", "number"),
     "instantiates": ("symbol", "symbol", "symbol", "number"),
+    "resolved_instantiates": ("symbol", "symbol", "symbol", "symbol", "number"),
     "reads_env_var": ("symbol", "symbol", "symbol", "number"),
     "constructor_kwarg": ("symbol", "symbol", "symbol", "symbol", "symbol", "number"),
     "return_constructor_kwarg": (
@@ -78,6 +97,14 @@ SOUFFLE_SCHEMA: dict[str, tuple[str, ...]] = {
     ),
     "call_result_assigned": ("symbol", "symbol", "symbol", "symbol", "number"),
     "local_dataclass_value": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "resolved_local_dataclass_value": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
 }
 
 
@@ -139,6 +166,16 @@ class PythonFactExtractor(ast.NodeVisitor):
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             self.facts.add(Fact("imports", (self.module_name, alias.name)))
+            self.facts.add(
+                Fact(
+                    "import_alias",
+                    (
+                        self.module_name,
+                        alias.asname or alias.name.split(".")[0],
+                        alias.name,
+                    ),
+                )
+            )
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -146,6 +183,12 @@ class PythonFactExtractor(ast.NodeVisitor):
         for alias in node.names:
             target = f"{module}.{alias.name}" if module else alias.name
             self.facts.add(Fact("imports", (self.module_name, target)))
+            self.facts.add(
+                Fact(
+                    "import_alias",
+                    (self.module_name, alias.asname or alias.name, target),
+                )
+            )
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -374,17 +417,17 @@ class PythonFactExtractor(ast.NodeVisitor):
         return arity
 
     def _render_expr(self, node: ast.AST) -> str | None:
-        if isinstance(node, ast.Name):
-            return node.id
-        if isinstance(node, ast.Attribute):
-            parent = self._render_expr(node.value)
-            return f"{parent}.{node.attr}" if parent else node.attr
-        if isinstance(node, ast.Call):
-            return self._render_expr(node.func)
-        if isinstance(node, ast.Subscript):
-            return self._render_expr(node.value)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            return node.value
+        match node:
+            case ast.Name(id=name):
+                return name
+            case ast.Attribute(value=value, attr=attr):
+                return f"{parent}.{attr}" if (parent := self._render_expr(value)) else attr
+            case ast.Call(func=func):
+                return self._render_expr(func)
+            case ast.Subscript(value=value):
+                return self._render_expr(value)
+            case ast.Constant(value=str(value)):
+                return value
         return None
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
@@ -552,10 +595,9 @@ class PythonFactExtractor(ast.NodeVisitor):
         if node is None:
             return False
         if isinstance(node, ast.Subscript):
-            base = self._render_expr(node.value)
-            return base is not None and base.split(".")[-1] == "ClassVar"
+            return self._last_name(self._render_expr(node.value)) == "ClassVar"
         rendered = self._render_expr(node)
-        return rendered is not None and rendered.split(".")[-1] == "ClassVar"
+        return self._last_name(rendered) == "ClassVar"
 
     def _is_optional_annotation(self, node: ast.AST | None) -> int:
         if node is None:
@@ -566,22 +608,21 @@ class PythonFactExtractor(ast.NodeVisitor):
                 or self._contains_none_annotation(node.right)
             )
         if isinstance(node, ast.Subscript):
-            base = self._render_expr(node.value)
-            if base is not None and base.split(".")[-1] == "Optional":
+            if self._last_name(self._render_expr(node.value)) == "Optional":
                 return 1
             return self._is_optional_annotation(node.slice)
         return 0
 
     def _contains_none_annotation(self, node: ast.AST) -> bool:
-        if isinstance(node, ast.Constant) and node.value is None:
-            return True
-        if isinstance(node, ast.Name) and node.id == "None":
-            return True
-        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
-            return self._contains_none_annotation(node.left) or self._contains_none_annotation(
-                node.right
-            )
-        return False
+        match node:
+            case ast.Constant(value=None) | ast.Name(id="None"):
+                return True
+            case ast.BinOp(left=left, op=ast.BitOr(), right=right):
+                return self._contains_none_annotation(
+                    left
+                ) or self._contains_none_annotation(right)
+            case _:
+                return False
 
     def _analyze_field_value(
         self, value: ast.AST | None
@@ -616,19 +657,14 @@ class PythonFactExtractor(ast.NodeVisitor):
         return "expression"
 
     def _iter_annotation_type_refs(self, node: ast.AST | None) -> set[str]:
-        refs: set[str] = set()
         if node is None:
-            return refs
+            return set()
 
-        for child in ast.walk(node):
-            if isinstance(child, ast.Name):
-                refs.add(child.id)
-            elif isinstance(child, ast.Attribute):
-                rendered = self._render_expr(child)
-                if rendered:
-                    refs.add(rendered)
-
-        return refs
+        return {
+            type_ref
+            for child in ast.walk(node)
+            if (type_ref := self._annotation_type_ref(child)) is not None
+        }
 
     def _returned_class_name(self, node: ast.AST) -> str | None:
         if isinstance(node, ast.Call):
@@ -737,11 +773,11 @@ class PythonFactExtractor(ast.NodeVisitor):
             return self._render_expr(node) or "<expr>"
 
     def _direct_attribute_flow(self, node: ast.AST) -> tuple[str, str] | None:
-        if not isinstance(node, ast.Attribute):
-            return None
-        if not isinstance(node.value, ast.Name):
-            return None
-        return node.value.id, node.attr
+        match node:
+            case ast.Attribute(value=ast.Name(id=owner), attr=field_name):
+                return owner, field_name
+            case _:
+                return None
 
     def _record_assignment_targets(
         self,
@@ -845,22 +881,221 @@ class PythonFactExtractor(ast.NodeVisitor):
         return isinstance(node, ast.Constant) and node.value is None
 
     def _literal_return(self, node: ast.AST) -> tuple[str, str] | None:
-        if isinstance(node, ast.Constant):
-            if isinstance(node.value, bool):
-                return "bool", str(node.value)
-            if isinstance(node.value, str):
-                return "str", node.value
-            if isinstance(node.value, int | float):
-                return "number", str(node.value)
-        if isinstance(node, ast.List):
-            return "list", self._expression_repr(node)
-        if isinstance(node, ast.Tuple):
-            return "tuple", self._expression_repr(node)
-        if isinstance(node, ast.Dict):
-            return "dict", self._expression_repr(node)
-        if isinstance(node, ast.Set):
-            return "set", self._expression_repr(node)
+        match node:
+            case ast.Constant(value=bool(value)):
+                return "bool", str(value)
+            case ast.Constant(value=str(value)):
+                return "str", value
+            case ast.Constant(value=int(value) | float(value)):
+                return "number", str(value)
+            case ast.List():
+                return "list", self._expression_repr(node)
+            case ast.Tuple():
+                return "tuple", self._expression_repr(node)
+            case ast.Dict():
+                return "dict", self._expression_repr(node)
+            case ast.Set():
+                return "set", self._expression_repr(node)
+            case _:
+                return None
+
+    @staticmethod
+    def _last_name(rendered: str | None) -> str | None:
+        return rendered.split(".")[-1] if rendered else None
+
+    def _annotation_type_ref(self, node: ast.AST) -> str | None:
+        match node:
+            case ast.Name(id=name):
+                return name
+            case ast.Attribute():
+                return self._render_expr(node)
+            case _:
+                return None
+
+
+def resolve_facts(facts: Iterable[Fact]) -> list[Fact]:
+    resolved: set[Fact] = set(facts)
+    class_defs = {
+        (str(module_name), str(class_name))
+        for fact in resolved
+        if fact.predicate == "defines_class"
+        for module_name, class_name in [fact.args]
+    }
+    modules = {
+        str(fact.args[0])
+        for fact in resolved
+        if fact.predicate == "module"
+    }
+    aliases: dict[str, dict[str, str]] = defaultdict(dict)
+
+    for fact in resolved:
+        if fact.predicate == "import_alias":
+            module_name, local_name, qualified_name = fact.args
+            aliases[str(module_name)][str(local_name)] = str(qualified_name)
+
+    class_name_to_defs: dict[str, set[str]] = defaultdict(set)
+    for module_name, class_name in class_defs:
+        class_name_to_defs[class_name].add(module_name)
+
+    def split_resolved_name(
+        module_name: str,
+        type_ref: str,
+    ) -> tuple[str, str] | None:
+        candidates = _resolution_candidates(module_name, type_ref, aliases, modules)
+        for candidate in candidates:
+            matched = _split_known_class(candidate, class_defs, modules)
+            if matched:
+                return matched
+
+        short_name = type_ref.split(".")[-1]
+        modules_for_class = class_name_to_defs.get(short_name, set())
+        if len(modules_for_class) == 1:
+            return next(iter(modules_for_class)), short_name
         return None
+
+    for fact in list(resolved):
+        match fact:
+            case Fact("extends", (module_name, class_name, base_name)):
+                _add_resolved_fact(
+                    resolved,
+                    split_resolved_name(str(module_name), str(base_name)),
+                    "resolved_extends",
+                    str(module_name),
+                    str(class_name),
+                )
+            case Fact("dataclass_field_type_ref", (
+                module_name,
+                class_name,
+                field_name,
+                type_ref,
+            )):
+                _add_resolved_fact(
+                    resolved,
+                    split_resolved_name(str(module_name), str(type_ref)),
+                    "resolved_dataclass_field_type_ref",
+                    str(module_name),
+                    str(class_name),
+                    str(field_name),
+                )
+            case Fact("function_param_type_ref", (
+                module_name,
+                qualified_name,
+                param_name,
+                type_ref,
+            )):
+                _add_resolved_fact(
+                    resolved,
+                    split_resolved_name(str(module_name), str(type_ref)),
+                    "resolved_param_type_ref",
+                    str(module_name),
+                    str(qualified_name),
+                    str(param_name),
+                )
+            case Fact("function_return_type_ref", (module_name, qualified_name, type_ref)):
+                _add_resolved_fact(
+                    resolved,
+                    split_resolved_name(str(module_name), str(type_ref)),
+                    "resolved_return_type_ref",
+                    str(module_name),
+                    str(qualified_name),
+                )
+            case Fact("returns_dataclass", (
+                module_name,
+                qualified_name,
+                class_name,
+                line,
+            )):
+                _add_resolved_fact(
+                    resolved,
+                    split_resolved_name(str(module_name), str(class_name)),
+                    "resolved_returns_dataclass",
+                    str(module_name),
+                    str(qualified_name),
+                    suffix=(int(line),),
+                )
+            case Fact("instantiates", (module_name, qualified_name, class_name, line)):
+                _add_resolved_fact(
+                    resolved,
+                    split_resolved_name(str(module_name), str(class_name)),
+                    "resolved_instantiates",
+                    str(module_name),
+                    str(qualified_name),
+                    suffix=(int(line),),
+                )
+            case Fact("local_dataclass_value", (
+                module_name,
+                qualified_name,
+                local_name,
+                class_name,
+                line,
+            )):
+                _add_resolved_fact(
+                    resolved,
+                    split_resolved_name(str(module_name), str(class_name)),
+                    "resolved_local_dataclass_value",
+                    str(module_name),
+                    str(qualified_name),
+                    str(local_name),
+                    suffix=(int(line),),
+                )
+            case _:
+                pass
+
+    return sorted(resolved)
+
+
+def _add_resolved_fact(
+    facts: set[Fact],
+    resolved_name: tuple[str, str] | None,
+    predicate: str,
+    *prefix: str,
+    suffix: tuple[int, ...] = (),
+) -> None:
+    if resolved_name:
+        type_module, type_name = resolved_name
+        facts.add(Fact(predicate, (*prefix, type_module, type_name, *suffix)))
+
+
+def _resolution_candidates(
+    module_name: str,
+    type_ref: str,
+    aliases: dict[str, dict[str, str]],
+    modules: set[str],
+) -> list[str]:
+    candidates: list[str] = []
+    parts = type_ref.split(".")
+    local_name = parts[0]
+
+    if local_name in aliases.get(module_name, {}):
+        target = aliases[module_name][local_name]
+        candidates.append(".".join([target, *parts[1:]]) if parts[1:] else target)
+
+    candidates.append(type_ref)
+    candidates.append(f"{module_name}.{type_ref}")
+
+    for module_candidate in modules:
+        if module_candidate.endswith(f".{local_name}"):
+            candidates.append(".".join([module_candidate, *parts[1:]]))
+
+    return candidates
+
+
+def _split_known_class(
+    qualified_name: str,
+    class_defs: set[tuple[str, str]],
+    modules: set[str],
+) -> tuple[str, str] | None:
+    parts = qualified_name.split(".")
+    for index in range(len(parts) - 1, 0, -1):
+        module_name = ".".join(parts[:index])
+        class_name = ".".join(parts[index:])
+        if (module_name, class_name) in class_defs:
+            return module_name, class_name
+        if module_name in modules and (module_name, parts[index]) in class_defs:
+            return module_name, parts[index]
+    if len(parts) == 1 and ("", parts[0]) in class_defs:
+        return "", parts[0]
+    return None
 
 
 def extract_facts_from_source(
@@ -870,7 +1105,7 @@ def extract_facts_from_source(
 ) -> list[Fact]:
     tree = ast.parse(source, filename=relative_path)
     extractor = PythonFactExtractor(module_name)
-    return extractor.extract(tree, relative_path)
+    return resolve_facts(extractor.extract(tree, relative_path))
 
 
 def extract_facts_from_path(root: Path, include_tests: bool = False) -> list[Fact]:
@@ -885,7 +1120,7 @@ def extract_facts_from_path(root: Path, include_tests: bool = False) -> list[Fac
                 relative_path=str(relative_path),
             )
         )
-    return sorted(facts)
+    return resolve_facts(facts)
 
 
 def write_debug_facts(facts: Iterable[Fact], output_path: Path | None = None) -> None:

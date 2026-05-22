@@ -31,6 +31,7 @@ class Worker(BaseWorker):
 
         self.assertIn('module("sample").', rendered)
         self.assertIn('imports("sample", "os").', rendered)
+        self.assertIn('import_alias("sample", "os", "os").', rendered)
         self.assertIn('defines_class("sample", "Worker").', rendered)
         self.assertIn('extends("sample", "Worker", "BaseWorker").', rendered)
         self.assertIn('defines_function("sample", "Worker.run", 2).', rendered)
@@ -129,6 +130,18 @@ class Poster:
         )
         self.assertIn(
             'function_return_type_ref("sample", "Poster.format_post", "Post").',
+            rendered,
+        )
+        self.assertIn(
+            'resolved_param_type_ref("sample", "Poster.format_post", "pet", "sample", "Pet").',
+            rendered,
+        )
+        self.assertIn(
+            'resolved_return_type_ref("sample", "Poster.format_post", "sample", "Post").',
+            rendered,
+        )
+        self.assertIn(
+            'resolved_returns_dataclass("sample", "Poster.format_post", "sample", "Post", 14).',
             rendered,
         )
         self.assertIn(
@@ -231,6 +244,60 @@ def run(poster: Poster, post: Post):
             rendered,
         )
         self.assertIn('returns_none("sample", "run", 18).', rendered)
+
+    def test_resolves_imported_class_references_across_project(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "models.py").write_text(
+                """
+from dataclasses import dataclass
+
+@dataclass
+class Pet:
+    name: str
+
+@dataclass
+class Post:
+    text: str
+                """.strip(),
+                encoding="utf-8",
+            )
+            (root / "poster.py").write_text(
+                """
+from models import Pet as Animal, Post
+
+class BasePoster:
+    pass
+
+class Poster(BasePoster):
+    def format_post(self, pet: Animal) -> Post:
+        return Post(text=pet.name)
+                """.strip(),
+                encoding="utf-8",
+            )
+
+            rendered = {fact.render() for fact in extract_facts_from_path(root)}
+
+        self.assertIn(
+            'import_alias("poster", "Animal", "models.Pet").',
+            rendered,
+        )
+        self.assertIn(
+            'resolved_extends("poster", "Poster", "poster", "BasePoster").',
+            rendered,
+        )
+        self.assertIn(
+            'resolved_param_type_ref("poster", "Poster.format_post", "pet", "models", "Pet").',
+            rendered,
+        )
+        self.assertIn(
+            'resolved_return_type_ref("poster", "Poster.format_post", "models", "Post").',
+            rendered,
+        )
+        self.assertIn(
+            'resolved_returns_dataclass("poster", "Poster.format_post", "models", "Post", 8).',
+            rendered,
+        )
 
 
 class ExtractFactsFromProjectTests(unittest.TestCase):
