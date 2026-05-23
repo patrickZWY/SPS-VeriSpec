@@ -103,6 +103,54 @@ Test targets:
 - For `frozen_contains_mutable_field`, test whether nested mutable state can still be mutated despite `frozen=True`.
 - For optional fields, generate `None` boundary tests for every method that reads the field.
 
+## Portable generated-test layout
+
+Generated tests should live outside the analyzed target project. The analyzer
+may run against a local checkout that is not committed to this repository, so
+generated output belongs under a repo-owned directory:
+
+```text
+generated_tests/<project-name>/test_generated_dataclass_properties.py
+generated_tests/<project-name>/README.md
+```
+
+Users run those tests by putting their own target checkout on `PYTHONPATH`:
+
+```bash
+PYTHONPATH=/path/to/target-project pytest generated_tests/<project-name>
+```
+
+The first implemented generator is:
+
+```bash
+python3 tools/generate_pytest_from_properties.py \
+  --analysis-dir /tmp/sps-analysis-run \
+  --output-dir generated_tests \
+  --project-name cutepetsboston
+```
+
+It reads the `facts/` and `test_out/` directories produced by
+`tools/run_souffle_models.py`. It currently emits a conservative executable
+subset:
+
+- public `format*` methods that transform one dataclass into another
+- required field mappings with string/list observability assertions
+- optional field passthrough mappings with exact `None`, empty-string, and
+  non-empty value checks
+
+It deliberately reports lower-confidence candidates instead of executing them:
+
+- publish methods and other effectful paths
+- private helper methods where the user-facing contract is unclear
+- branch-only facts where the condition is known but branch-specific return
+  behavior is not yet modeled
+- lossy required-field candidates
+- non-string/list target fields without a reliable assertion template
+
+This split is important: the generated test file should be useful immediately,
+while the generated README keeps the rest of the property inventory visible for
+review and future oracle work.
+
 ## Class/dataclass role facts
 
 Classes should be related to dataclasses by role, not only by raw type edges.
@@ -178,6 +226,11 @@ Test targets:
 
 - Every `SocialPoster.publish(post: Post) -> PostResult` implementation should be tested with the same `Post` boundary cases.
 - Every `PetSource.fetch_pets() -> Iterable[AdoptablePet]` implementation should be tested for required `AdoptablePet` fields.
+
+For the first executable generator, these contract targets remain report-only
+unless the method can be exercised without network, filesystem, environment, or
+SDK effects. The next step is to generate mocks or harnesses for effectful
+contracts, then run those tests as part of a validation stage.
 
 ## Method-level transformation facts
 
@@ -343,6 +396,37 @@ The current project would get test targets such as:
 - Generate boundary tests from numeric bounds such as string length checks and slice truncation.
 - Assert result/status literals such as successful and failed `PostResult.success` paths.
 - Review lossy required-field candidates where a required input field does not reach the returned dataclass.
+
+## Validation and presentation
+
+After generating tests, the framework should validate them by running pytest
+against the user's target checkout and collecting a structured result:
+
+- passed generated tests
+- assertion failures tied back to their source relation
+- dependency/import skips
+- unsupported review candidates
+- generated-test runtime
+
+The user-facing report should present executable tests separately from review
+candidates. A failed generated test is not automatically a program bug: it may
+also mean the static property was over-approximate or the assertion oracle was
+too strong. The report should preserve that distinction.
+
+## Future testing directions
+
+- Hypothesis/property-based generation from dataclass schemas, optional fields,
+  numeric bounds, string bounds, and contract families.
+- Mutation-testing experiments inspired by *The Fuzzing Book*: mutate program
+  statements, dataclass defaults, field mappings, branch predicates, or
+  generated inputs, then measure whether property-derived tests detect the
+  change.
+- Concolic testing with SAT/SMT solvers: execute concrete paths, collect path
+  constraints from branch and boundary facts, then solve for inputs that reach
+  uncovered or suspicious paths.
+- Coverage statistics for the generated-test framework: source line and branch
+  coverage, dataclass-field coverage, derived-relation coverage, contract-family
+  coverage, and coverage deltas relative to handwritten tests.
 
 ## Bottom line
 

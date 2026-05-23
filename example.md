@@ -64,6 +64,39 @@ Useful current targets include:
 - contract tests for each `SocialPoster.publish(Post) -> PostResult`
 - contract tests for each `PetSource.fetch_pets() -> Iterable[AdoptablePet]`
 
+The current executable generator writes tests into this repository, not into
+the analyzed target project. This matters for sample targets such as
+`CutePetsBoston`, where users may provide their own local checkout instead of
+committing the whole app into this repo.
+
+```bash
+python3 tools/generate_pytest_from_properties.py \
+  --analysis-dir /tmp/sps-analysis-run \
+  --output-dir generated_tests \
+  --project-name cutepetsboston
+```
+
+Generated output:
+
+```text
+generated_tests/cutepetsboston/test_generated_dataclass_properties.py
+generated_tests/cutepetsboston/README.md
+```
+
+The generated pytest file imports target modules dynamically, so run it with
+the target checkout on `PYTHONPATH`:
+
+```bash
+PYTHONPATH=/path/to/CutePetsBoston pytest generated_tests/cutepetsboston
+```
+
+The default generator is intentionally conservative. It emits executable tests
+for public `format*` dataclass transformations with simple string/list
+observability or exact optional-field passthrough. It reports the rest as
+review candidates, including publish methods, private helpers, branch-only
+facts, lossy required-field candidates, and relations whose assertion oracle is
+not yet strong enough.
+
 Concrete current output examples:
 
 ```text
@@ -139,6 +172,19 @@ validation behavior.
 
 6. Validate generated tests by executing them.
 
+The first validation loop should be mechanical:
+
+- run generated tests against the user's target checkout
+- record pass/fail/skip counts
+- preserve dependency-related skips separately from assertion failures
+- connect failures back to the derived relation that produced the test
+- decide whether the failure means a program bug, a weak oracle, or an
+  over-approximate static property
+
+This project does not yet implement a validation runner beyond producing
+pytest-compatible tests and a generated report, but the generated README records
+the command users should run.
+
 7. Surface contradictions and review candidates to users.
 
 Examples:
@@ -160,8 +206,20 @@ Examples:
 - Add CFG/control-dependence facts so validation guards and returned constructors can be linked more precisely.
 - Add lightweight alias/points-to facts so local field reads/writes are less name-based.
 - Examine the current Souffle rules for precision, redundancy, performance, and whether their derived relations are actually useful for test generation.
-- Generate executable property/fuzz tests directly from the test-target CSV outputs.
+- Expand executable property/fuzz tests directly from the test-target CSV
+  outputs. The current generator starts with conservative pytest examples;
+  future generators should add Hypothesis strategies for optional fields,
+  boundary values, and dataclass combinations.
 - Feed test execution results back into the knowledge base.
+- Add mutation-testing experiments inspired by *The Fuzzing Book*: mutate target
+  code or generated inputs, rerun property-derived tests, and measure whether
+  the framework catches the injected behavioral change.
+- Add concolic testing experiments that combine concrete execution with
+  SAT/SMT solving for branch conditions and numeric/string boundaries.
+- Add coverage statistics for the generated-test framework: line/branch
+  coverage, dataclass-field coverage, relation coverage, high-confidence
+  property coverage, and coverage deltas compared with the target project's
+  handwritten tests.
 
 # Potential static-analysis layers
 

@@ -88,6 +88,48 @@ Formatting overrides:
 - Assert explicit success/failure result literal paths such as `PostResult.success = True` and `PostResult.success = False`.
 - Review lossy required-field candidates before deciding whether they are intentional lossy transformations or missing behavior.
 
+## Current generated-test artifact
+
+The first executable generator keeps tests outside `CutePetsBoston/` so this
+repository can be shared without committing the full sample application. Given
+an analysis run such as:
+
+```bash
+python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-analysis-run
+```
+
+generate portable pytest tests with:
+
+```bash
+python3 tools/generate_pytest_from_properties.py \
+  --analysis-dir /tmp/sps-analysis-run \
+  --output-dir generated_tests \
+  --project-name cutepetsboston
+```
+
+Current output:
+
+```text
+generated_tests/cutepetsboston/test_generated_dataclass_properties.py
+generated_tests/cutepetsboston/README.md
+```
+
+Run them against any local CutePetsBoston checkout with:
+
+```bash
+PYTHONPATH=/path/to/CutePetsBoston pytest generated_tests/cutepetsboston
+```
+
+The current generated file emits the conservative executable subset: public
+`format_post` properties for `SocialPoster` and `PosterMastodon`, including
+required field observability into `Post.text`, `Post.tags`, and
+`Post.alt_text`, plus optional passthrough checks for `adoption_url -> link`
+and `image_url -> image_url`.
+
+Publishing paths, private Mastodon caption helpers, and branch-only targets are
+still reported as review candidates because their generated tests need either
+mocks, stronger control-dependence facts, or a more precise assertion oracle.
+
 ## Current precision limits
 
 - Field-to-constructor-argument flow now captures aliases and many composed expressions, including f-strings and list elements.
@@ -95,3 +137,20 @@ Formatting overrides:
 - Call-result propagation is conservative; mappings through SDK/API return values can over-approximate semantic influence.
 - Override matching is name-based and base-class-name-based; import-resolved inheritance exists as facts but matching still needs better cross-module precision.
 - Branch facts show that a field appears in a condition, not which return branch it controls.
+
+## Future potential work
+
+- Add a validation runner that executes generated tests, records pass/fail/skip
+  counts, and links each result back to the derived relation that produced it.
+- Present executable tests separately from review-only candidates so users can
+  distinguish likely program failures from weak static-analysis oracles.
+- Add Hypothesis templates for optional field combinations, Mastodon length
+  boundaries, tag normalization, and contract conformance.
+- Explore mutation testing inspired by *The Fuzzing Book* by mutating
+  dataclass mappings, branch conditions, and generated inputs, then measuring
+  whether generated tests detect the change.
+- Explore concolic testing with SAT/SMT solvers to solve branch and boundary
+  constraints instead of relying only on sampled examples.
+- Track coverage statistics for line/branch coverage, dataclass-field
+  coverage, derived-relation coverage, and coverage deltas versus handwritten
+  CutePetsBoston tests.

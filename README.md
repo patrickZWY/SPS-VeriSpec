@@ -60,6 +60,35 @@ Useful relation outputs include:
 - `/tmp/sps-analysis-run/semantic_out/lossy_required_field_candidate.csv`
 - `/tmp/sps-analysis-run/semantic_out/boundary_test_candidate.csv`
 
+To generate portable pytest tests from the conservative executable subset of
+the derived properties, keep the tests outside the analyzed project:
+
+```bash
+python3 tools/generate_pytest_from_properties.py \
+  --analysis-dir /tmp/sps-analysis-run \
+  --output-dir generated_tests \
+  --project-name cutepetsboston
+```
+
+This writes:
+
+- `generated_tests/cutepetsboston/test_generated_dataclass_properties.py`
+- `generated_tests/cutepetsboston/README.md`
+
+The generated tests are intentionally not written into `CutePetsBoston/`.
+Users can clone or copy their own target checkout, install its dependencies,
+and run the generated tests with the target project on `PYTHONPATH`:
+
+```bash
+PYTHONPATH=/path/to/CutePetsBoston pytest generated_tests/cutepetsboston
+```
+
+The current generator emits public `format*` dataclass-transformation tests
+where the derived relation has a simple string/list oracle. It keeps publishing
+paths, private helpers, branch-only facts, lossy-flow candidates, and other
+lower-confidence relations in the generated report until stronger oracles are
+available.
+
 ## What this project is trying to achieve
 
 The goal is to make testing more automated and iterative. Instead of relying
@@ -105,15 +134,31 @@ Implemented:
 - Literal, string-composition, numeric-comparison, `len(...)`, and slice-bound fact extraction.
 - Semantic field-flow, composed-flow, observable-required-field, lossy-field-candidate, literal-status, and numeric-boundary derivations.
 - One-command analysis runner with Markdown summary output.
+- Portable pytest generation from a conservative subset of derived dataclass
+  transformation properties.
 
 Still future work:
 
-- Generate executable property/fuzz tests from the derived CSV relations.
+- Expand executable property/fuzz tests from the derived CSV relations,
+  including Hypothesis templates for boundary and combination-heavy properties.
+- Validate generated tests automatically by running them against a target
+  checkout, summarizing pass/fail/skip results, and feeding those results back
+  into the analysis loop.
+- Present generated tests and review candidates in a user-facing report that
+  separates executable tests, skipped dependency-bound tests, and properties
+  that still need human confirmation.
 - Resolve imports and type identities more precisely.
 - Add more precise call-boundary summaries.
 - Add branch-local return facts that connect a condition to a specific returned constructor.
 - Add CFG/control-dependence facts for more precise guarded-return and validation reasoning.
-- Feed test execution results back into the analysis loop.
+- Explore mutation-testing workflows inspired by *The Fuzzing Book*: mutate
+  target code or generated inputs and measure whether property-derived tests
+  detect the behavioral change.
+- Explore concolic testing and solver-aided test generation so path conditions
+  and boundary constraints can be solved rather than sampled.
+- Compute coverage and relation-coverage statistics, such as source line or
+  branch coverage, dataclass-field coverage, derived-property coverage, and the
+  percentage of high-confidence relations backed by executable tests.
 
 Potential static-analysis directions:
 
