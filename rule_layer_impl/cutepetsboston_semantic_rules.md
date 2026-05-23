@@ -19,6 +19,8 @@ python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-docs-chec
 - String composition targets: 4
 - Numeric bounds: 6
 - Numeric boundary candidates: 18
+- Boundary behaviors: 2
+- Helper boundary behaviors: 1
 
 ## Domain-level semantic flows
 
@@ -149,6 +151,28 @@ Generated boundary tests should include:
 - Mastodon `main_limit` values around `-1`, `0`, and `1`
 - RescueGroups description lengths around `496`, `497`, `498`, `499`, `500`, and `501`
 
+## Boundary behavior semantics
+
+The boundary-behavior layer associates generic numeric bounds with the input and
+output surface they affect.
+
+Current dataclass/input behaviors:
+
+- `Post.text -> str.<return>` in `PosterInstagram._format_caption` has
+  `max_length` behavior around `caption < 2200`.
+- `Post.tags -> str.<return>` in `PosterInstagram._format_caption` also
+  contributes to the same caption max-length behavior because tag text can be
+  appended to the caption.
+
+Current helper behaviors:
+
+- `SourceRescueGroups._clean_description(description) -> return` has
+  `truncate_or_include` behavior around the local `text[:497]` slice.
+
+This is the level where generic boundaries become platform/helper-specific test
+intent. Raw facts still say "`caption` has an upper bound"; behavior facts say
+"this input contributes to a returned string max-length constraint."
+
 ## Recommended project tests
 
 - Vary `AdoptablePet.name`, `breed`, `species`, and `location`; assert they are
@@ -173,3 +197,6 @@ Generated boundary tests should include:
   not exact rendered string equality.
 - Field identity is still partly name-based and should be improved with
   stronger alias and type-resolution facts.
+- Boundary behavior summaries are intentionally narrow. They currently cover
+  upper-bound string caps through dataclass/local dependencies and simple helper
+  truncation, not arbitrary platform API constraints.

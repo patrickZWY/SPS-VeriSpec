@@ -111,6 +111,8 @@ Current output:
 
 ```text
 generated_tests/cutepetsboston/test_generated_dataclass_properties.py
+generated_tests/cutepetsboston/test_generated_dataclass_hypothesis.py
+generated_tests/cutepetsboston/test_generated_helper_boundaries.py
 generated_tests/cutepetsboston/README.md
 ```
 
@@ -120,15 +122,18 @@ Run them against any local CutePetsBoston checkout with:
 PYTHONPATH=/path/to/CutePetsBoston pytest generated_tests/cutepetsboston
 ```
 
-The current generated file emits the conservative executable subset: public
-`format_post` properties for `SocialPoster` and `PosterMastodon`, including
-required field observability into `Post.text`, `Post.tags`, and
-`Post.alt_text`, plus optional passthrough checks for `adoption_url -> link`
-and `image_url -> image_url`.
+The current generated files emit the conservative executable subset: public
+`format_post` examples and Hypothesis properties for `SocialPoster` and
+`PosterMastodon`, including required field observability into `Post.text`,
+`Post.tags`, and `Post.alt_text`, plus optional passthrough checks for
+`adoption_url -> link` and `image_url -> image_url`. The helper-boundary file
+adds lower-confidence private-helper tests when a string-length boundary can be
+driven directly.
 
-Publishing paths, private Mastodon caption helpers, and branch-only targets are
-still reported as review candidates because their generated tests need either
-mocks, stronger control-dependence facts, or a more precise assertion oracle.
+Publishing paths, private Mastodon caption helpers that need dataclass/custom
+input construction, and branch-only targets are still reported as review
+candidates because their generated tests need either mocks, stronger
+control-dependence facts, or a more precise assertion oracle.
 
 ## Current precision limits
 
@@ -140,17 +145,18 @@ mocks, stronger control-dependence facts, or a more precise assertion oracle.
 
 ## Future potential work
 
-- Add a validation runner that executes generated tests, records pass/fail/skip
-  counts, and links each result back to the derived relation that produced it.
-- Present executable tests separately from review-only candidates so users can
+- Feed validation results back into the relation store so pass/fail/skip counts
+  can be linked directly to the derived relation that produced each test.
+- Improve executable/review report comparisons across runs so users can
   distinguish likely program failures from weak static-analysis oracles.
-- Add Hypothesis templates for optional field combinations, Mastodon length
-  boundaries, tag normalization, and contract conformance.
+- Extend Hypothesis templates beyond current transform properties into optional
+  field combinations, richer Mastodon length boundaries, tag normalization, and
+  contract conformance.
 - Explore mutation testing inspired by *The Fuzzing Book* by mutating
   dataclass mappings, branch conditions, and generated inputs, then measuring
   whether generated tests detect the change.
 - Explore concolic testing with SAT/SMT solvers to solve branch and boundary
   constraints instead of relying only on sampled examples.
-- Track coverage statistics for line/branch coverage, dataclass-field
-  coverage, derived-relation coverage, and coverage deltas versus handwritten
-  CutePetsBoston tests.
+- Extend evaluation statistics beyond current line coverage and coverage deltas
+  into branch coverage, dataclass-field coverage, derived-relation coverage, and
+  mutation score.

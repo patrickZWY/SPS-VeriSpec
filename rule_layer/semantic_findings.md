@@ -5,9 +5,9 @@ This file describes the generic semantic layer implemented in
 
 The goal is to move beyond dataclass shape without becoming project-specific.
 The layer derives conservative semantic candidates from value flow, literal
-constructor arguments, string construction, and numeric bounds. These candidates
-are intended to drive concrete tests and review, not to prove full runtime
-correctness.
+constructor arguments, string construction, numeric bounds, and boundary-level
+behavior summaries. These candidates are intended to drive concrete tests and
+review, not to prove full runtime correctness.
 
 ## Souffle program
 
@@ -38,6 +38,8 @@ python3 tools/run_souffle_models.py <python-project-dir> --work-dir /tmp/project
 - string-valued fields built through f-strings, joins, format calls, or simple concatenation
 - numeric bounds from comparisons and string slicing
 - `below`, `at`, and `above` boundary-test candidates
+- boundary behavior that associates generic bounds with dataclass inputs,
+  primitive string returns, or helper returns
 - conflicting inclusive numeric-bound candidates
 
 ## Useful outputs
@@ -51,6 +53,8 @@ python3 tools/run_souffle_models.py <python-project-dir> --work-dir /tmp/project
 - `/tmp/project-semantic-out/string_composition_target.csv`
 - `/tmp/project-semantic-out/numeric_bound.csv`
 - `/tmp/project-semantic-out/boundary_test_candidate.csv`
+- `/tmp/project-semantic-out/boundary_behavior.csv`
+- `/tmp/project-semantic-out/helper_boundary_behavior.csv`
 - `/tmp/project-semantic-out/numeric_bound_conflict_candidate.csv`
 
 ## Example output shape
@@ -76,17 +80,37 @@ Boundary-test candidate:
 For a comparison like `len(text) > 500`, the current model can emit boundary
 candidates around `499`, `500`, and `501`.
 
+Boundary behavior:
+
+```text
+<function_module> <class_name> <qualified_name> <expression> <bound_kind> <bound_value> <input_module> <input_class> <input_field> <output_module> <output_class> <output_field> <behavior_kind>
+```
+
+Helper boundary behavior:
+
+```text
+<function_module> <class_name> <qualified_name> <expression> <bound_kind> <bound_value> <input_param> <output_kind> <behavior_kind>
+```
+
+These relations encode the platform/helper level above raw numeric boundaries:
+for example, a local caption slice can become `Post.text -> str.<return>` with
+`max_length`, while a private cleanup helper can become `description -> return`
+with `truncate_or_include`.
+
 ## Why this matters
 
 The earlier layers can say that one dataclass transforms into another. The
 semantic layer can say which required input fields are observable, which fields
 appear dropped, which status fields are set with explicit literals, and which
-numeric boundaries deserve tests.
+numeric boundaries deserve tests. The boundary-behavior relations add one more
+level: they associate a generic bound with the input and output surface that a
+test should exercise.
 
 That gives a better bridge from analysis to executable tests:
 
 - vary required fields that should be observable in output text
 - generate boundary values for length and truncation checks
+- select stronger platform-specific boundary tests from behavior summaries
 - test success/failure result constructors from observed boolean literals
 - review lossy required-field candidates before deciding whether they are bugs
 
@@ -101,3 +125,6 @@ That gives a better bridge from analysis to executable tests:
 - String semantics detect construction style and field influence, not exact
   rendered string content.
 - Call-boundary influence is intentionally conservative and can over-approximate.
+- Boundary behavior is a summary layer over syntactic facts; it is intentionally
+  narrow and currently handles direct/local dataclass string caps and simple
+  helper-return truncation.

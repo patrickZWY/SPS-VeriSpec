@@ -133,6 +133,10 @@ def write_summary(work_dir: Path) -> Path:
     numeric_bound_conflicts = read_tsv_rows(
         semantic_dir / "numeric_bound_conflict_candidate.csv"
     )
+    boundary_behaviors = read_tsv_rows(semantic_dir / "boundary_behavior.csv")
+    helper_boundary_behaviors = read_tsv_rows(
+        semantic_dir / "helper_boundary_behavior.csv"
+    )
 
     effect_counts = Counter(row[2] for row in effectful_dataclasses if len(row) >= 3)
 
@@ -152,6 +156,8 @@ def write_summary(work_dir: Path) -> Path:
         f"- Composed semantic field flows: {len(composed_semantic_flows)}",
         f"- Observable required fields: {len(observable_required_fields)}",
         f"- Numeric boundary candidates: {len(boundary_test_candidates)}",
+        f"- Boundary behaviors: {len(boundary_behaviors)}",
+        f"- Helper boundary behaviors: {len(helper_boundary_behaviors)}",
         "",
     ]
 
@@ -334,6 +340,25 @@ def write_summary(work_dir: Path) -> Path:
                 f"- Conflicting bounds: `{row[2]}` lower `{row[3]}` exceeds upper `{row[4]}` in `{row[0]}.{row[1]}`"
             )
         lines.append("")
+
+    append_section(
+        lines,
+        "## Boundary Behaviors",
+        boundary_behaviors,
+        lambda row: (
+            f"- `{row[6]}.{row[7]}.{row[8]}` drives `{row[9]}.{row[10]}.{row[11]}` "
+            f"as `{row[12]}` around `{row[2]}` `{row[3]}` `{row[4]}` = `{row[5]}`"
+        ),
+    )
+    append_section(
+        lines,
+        "## Helper Boundary Behaviors",
+        helper_boundary_behaviors,
+        lambda row: (
+            f"- `{row[2]}` maps input `{row[6]}` to `{row[7]}` as `{row[8]}` "
+            f"around `{row[3]}` `{row[4]}` `{row[5]}`"
+        ),
+    )
 
     if frozen_mutable_fields or override_contracts:
         lines.append("## Design Review Candidates")

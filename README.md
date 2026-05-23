@@ -59,6 +59,8 @@ Useful relation outputs include:
 - `/tmp/sps-analysis-run/semantic_out/observable_required_field.csv`
 - `/tmp/sps-analysis-run/semantic_out/lossy_required_field_candidate.csv`
 - `/tmp/sps-analysis-run/semantic_out/boundary_test_candidate.csv`
+- `/tmp/sps-analysis-run/semantic_out/boundary_behavior.csv`
+- `/tmp/sps-analysis-run/semantic_out/helper_boundary_behavior.csv`
 
 To generate portable pytest tests from the conservative executable subset of
 the derived properties, keep the tests outside the analyzed project:
@@ -73,6 +75,8 @@ python3 tools/generate_pytest_from_properties.py \
 This writes:
 
 - `generated_tests/cutepetsboston/test_generated_dataclass_properties.py`
+- `generated_tests/cutepetsboston/test_generated_dataclass_hypothesis.py`
+- `generated_tests/cutepetsboston/test_generated_helper_boundaries.py`
 - `generated_tests/cutepetsboston/README.md`
 
 The generated tests are intentionally not written into `CutePetsBoston/`.
@@ -84,10 +88,56 @@ PYTHONPATH=/path/to/CutePetsBoston pytest generated_tests/cutepetsboston
 ```
 
 The current generator emits public `format*` dataclass-transformation tests
-where the derived relation has a simple string/list oracle. It keeps publishing
-paths, private helpers, branch-only facts, lossy-flow candidates, and other
-lower-confidence relations in the generated report until stronger oracles are
-available.
+where the derived relation has a simple string/list oracle. It also emits an
+optional Hypothesis-backed property test file for the same conservative
+relations. It also emits lower-confidence helper-boundary tests when a private
+helper boundary can be driven by a simple string input. It keeps publishing
+paths, branch-only facts, lossy-flow candidates, and other lower-confidence
+relations in the generated report until stronger oracles are available.
+
+To run generated tests and write a validation summary:
+
+```bash
+python3 tools/validate_generated_tests.py \
+  generated_tests/cutepetsboston \
+  --target-project /path/to/CutePetsBoston
+```
+
+To measure how much target source coverage the target tests and generated tests
+cover together:
+
+```bash
+python3 tools/coverage_stats.py \
+  --target-project /path/to/CutePetsBoston \
+  --target-tests /path/to/CutePetsBoston/tests \
+  --generated-tests generated_tests/cutepetsboston \
+  --report /tmp/sps-coverage-stats.md
+```
+
+To produce a broader evaluation report with inline SVG charts, relation-to-test
+yield, and coverage deltas for handwritten, generated, and combined suites:
+
+```bash
+python3 tools/evaluation_stats.py \
+  --analysis-dir /tmp/sps-analysis-run \
+  --target-project /path/to/CutePetsBoston \
+  --target-tests /path/to/CutePetsBoston/tests \
+  --generated-tests generated_tests/cutepetsboston \
+  --report /tmp/sps-evaluation-stats.md
+```
+
+To run a small mutation evaluation over relation-guided transform mutants and
+solver-adjacent boundary mutants:
+
+```bash
+python3 tools/mutation_eval.py \
+  --analysis-dir /tmp/sps-analysis-run \
+  --target-project /path/to/CutePetsBoston \
+  --target-tests /path/to/CutePetsBoston/tests \
+  --generated-tests generated_tests/cutepetsboston \
+  --max-mutants 12 \
+  --report /tmp/sps-mutation-eval.md
+```
 
 ## What this project is trying to achieve
 
@@ -105,9 +155,24 @@ For example, the analyzer can currently surface relations such as:
 - `AdoptablePet.name` is observable through string-valued output fields
 - `PostResult.success` is constructed from explicit boolean literals
 - numeric/string bounds such as `len(text) > 500` and `text[:497]` produce boundary-test candidates
+- boundary-level semantics connect generic bounds to platform behavior such as
+  Instagram caption max length and RescueGroups description truncation
 
 Those relations are not tests yet, but they are structured enough to become
 test templates.
+
+## Project metadata
+
+- Research prototype, not a finished verification system.
+- Coding agent: OpenAI Codex through `codex-cli 0.133.0`.
+- Codex model: Codex based on GPT-5.
+- Tested OS: macOS on Darwin `24.6.0`, `x86_64`.
+- Python: `3.12.0`.
+- Souffle: `2.5`.
+- pytest: `9.0.3` inside the local `.venv`.
+- Main case study: `CutePetsBoston`.
+- Portability status: not systematically tested across Linux, Windows, multiple
+  Python versions, or multiple Souffle versions.
 
 ## Repository map
 
@@ -132,33 +197,48 @@ Implemented:
 - Local dependency tracking through aliases and composed expressions.
 - Conservative call-result read inference.
 - Literal, string-composition, numeric-comparison, `len(...)`, and slice-bound fact extraction.
-- Semantic field-flow, composed-flow, observable-required-field, lossy-field-candidate, literal-status, and numeric-boundary derivations.
+- Semantic field-flow, composed-flow, observable-required-field,
+  lossy-field-candidate, literal-status, numeric-boundary, and boundary-behavior
+  derivations.
 - One-command analysis runner with Markdown summary output.
 - Portable pytest generation from a conservative subset of derived dataclass
   transformation properties.
+- Optional Hypothesis property-test generation for supported transformation
+  properties.
+- Lower-confidence helper-boundary pytest generation for simple string-length
+  helper boundaries.
+- Generated-test validation runner with pass/fail/skip Markdown reports.
+- Combined coverage-statistics runner for target tests plus generated tests.
+- Evaluation-statistics runner for relation-to-test yield and coverage deltas.
+- Boundary-guided mutation-evaluation runner for handwritten, generated, and
+  combined mutation scores.
+- Souffle boundary-behavior relations that associate generic numeric bounds
+  with dataclass inputs, primitive string returns, and helper return behavior.
 
 Still future work:
 
-- Expand executable property/fuzz tests from the derived CSV relations,
-  including Hypothesis templates for boundary and combination-heavy properties.
-- Validate generated tests automatically by running them against a target
-  checkout, summarizing pass/fail/skip results, and feeding those results back
-  into the analysis loop.
-- Present generated tests and review candidates in a user-facing report that
-  separates executable tests, skipped dependency-bound tests, and properties
-  that still need human confirmation.
+- Expand executable property/fuzz tests from more derived CSV relations,
+  especially public boundary, branch-condition, and combination-heavy
+  properties.
+- Feed generated-test pass/fail/skip results back into the analysis loop.
+- Improve generated reports so dependency-bound skips, assertion failures,
+  human-review properties, and evaluation deltas are easier to compare across
+  runs.
 - Resolve imports and type identities more precisely.
 - Add more precise call-boundary summaries.
 - Add branch-local return facts that connect a condition to a specific returned constructor.
 - Add CFG/control-dependence facts for more precise guarded-return and validation reasoning.
-- Explore mutation-testing workflows inspired by *The Fuzzing Book*: mutate
-  target code or generated inputs and measure whether property-derived tests
-  detect the behavioral change.
+- Expand mutation testing beyond the current relation-guided transform and
+  solver-adjacent boundary mutants.
 - Explore concolic testing and solver-aided test generation so path conditions
   and boundary constraints can be solved rather than sampled.
-- Compute coverage and relation-coverage statistics, such as source line or
-  branch coverage, dataclass-field coverage, derived-property coverage, and the
-  percentage of high-confidence relations backed by executable tests.
+- Compute deeper coverage and relation-coverage statistics, such as branch
+  coverage, dataclass-field coverage, derived-property coverage, and the
+  percentage of high-confidence relations backed by executable tests. Basic
+  line coverage, relation-to-test yield, coverage deltas, and mutation score
+  are implemented.
+- Use `boundary_behavior.csv` and `helper_boundary_behavior.csv` directly in
+  executable test generation instead of relying only on raw numeric-bound facts.
 
 Potential static-analysis directions:
 

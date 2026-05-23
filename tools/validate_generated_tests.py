@@ -1,0 +1,135 @@
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run generated pytest tests against a target checkout and write a validation report."
+    )
+    parser.add_argument(
+        "generated_tests_dir",
+        help="Directory containing generated pytest files.",
+    )
+    parser.add_argument(
+        "--target-project",
+        required=True,
+        help="Target Python project checkout to put on PYTHONPATH.",
+    )
+    parser.add_argument(
+        "--report",
+        help="Markdown report path. Defaults to <generated_tests_dir>/validation_report.md.",
+    )
+    parser.add_argument(
+        "--pytest-arg",
+        action="append",
+        default=[],
+        help="Extra argument passed to pytest. Repeat for multiple arguments.",
+    )
+    return parser.parse_args()
+
+
+def parse_pytest_counts(output: str) -> dict[str, int]:
+    counts = {"passed": 0, "failed": 0, "skipped": 0, "xfailed": 0, "xpassed": 0, "errors": 0}
+    pattern = re.compile(
+        r"(?P<count>\d+)\s+"
+        r"(?P<kind>passed|failed|skipped|xfailed|xpassed|errors?)"
+    )
+    for match in pattern.finditer(output):
+        kind = match.group("kind")
+        if kind == "error":
+            kind = "errors"
+        counts[kind] = counts.get(kind, 0) + int(match.group("count"))
+    return counts
+
+
+def write_report(
+    path: Path,
+    generated_tests_dir: Path,
+    target_project: Path,
+    command: list[str],
+    returncode: int,
+    counts: dict[str, int],
+    output: str,
+) -> None:
+    clipped_output = output[-12000:]
+    lines = [
+        "# Generated Test Validation Report",
+        "",
+        f"- Generated tests: `{generated_tests_dir}`",
+        f"- Target project: `{target_project}`",
+        f"- Return code: `{returncode}`",
+        f"- Passed: {counts.get('passed', 0)}",
+        f"- Failed: {counts.get('failed', 0)}",
+        f"- Errors: {counts.get('errors', 0)}",
+        f"- Skipped: {counts.get('skipped', 0)}",
+        f"- XFailed: {counts.get('xfailed', 0)}",
+        f"- XPassed: {counts.get('xpassed', 0)}",
+        "",
+        "## Command",
+        "",
+        "```bash",
+        " ".join(command),
+        "```",
+        "",
+        "## Pytest Output",
+        "",
+        "```text",
+        clipped_output,
+        "```",
+        "",
+    ]
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def main() -> None:
+    args = parse_args()
+    generated_tests_dir = Path(args.generated_tests_dir).resolve()
+    target_project = Path(args.target_project).resolve()
+    report_path = Path(args.report).resolve() if args.report else generated_tests_dir / "validation_report.md"
+
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        str(target_project)
+        if not existing_pythonpath
+        else f"{target_project}{os.pathsep}{existing_pythonpath}"
+    )
+
+    command = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        str(generated_tests_dir),
+        *args.pytest_arg,
+    ]
+    completed = subprocess.run(
+        command,
+        check=False,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    counts = parse_pytest_counts(completed.stdout)
+    write_report(
+        report_path,
+        generated_tests_dir,
+        target_project,
+        command,
+        completed.returncode,
+        counts,
+        completed.stdout,
+    )
+    print(report_path)
+    raise SystemExit(completed.returncode)
+
+
+if __name__ == "__main__":
+    main()

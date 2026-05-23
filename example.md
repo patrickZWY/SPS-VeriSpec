@@ -7,6 +7,7 @@
 The extractor now emits facts for:
 
 - modules, imports, classes, inheritance, functions, and methods
+- import aliases plus resolved dataclass field, parameter, and return type refs
 - dataclasses, fields, optionality, defaults, factories, and frozen status
 - function parameters, return annotations, constructor calls, and exceptions
 - field reads/writes, condition field reads, env reads, and call effects
@@ -51,18 +52,22 @@ The analyzer now derives:
 - observable required fields and lossy required-field candidates
 - literal dataclass field values such as `PostResult.success = False`
 - numeric boundary-test candidates from comparisons and slicing
+- boundary-level behavior summaries that connect generic bounds to platform or
+  helper output behavior
 
 5. Generate tests from derived relationships.
 
-Useful current targets include:
+Useful generated or review targets include:
 
 - optional boundary tests such as `AdoptablePet.adoption_url -> Post.link`
 - optional image tests such as `AdoptablePet.image_url -> Post.image_url`
 - required field mapping tests such as `AdoptablePet.name/breed/species -> Post.alt_text`
 - post text/tag tests from `AdoptablePet.breed/species/location`
 - Mastodon formatting tests such as `PreparedCaption.caption_text -> CaptionThread.main_caption/replies`
-- contract tests for each `SocialPoster.publish(Post) -> PostResult`
-- contract tests for each `PetSource.fetch_pets() -> Iterable[AdoptablePet]`
+- review candidates for `SocialPoster.publish(Post) -> PostResult`
+  implementations
+- review candidates for `PetSource.fetch_pets() -> Iterable[AdoptablePet]`
+  implementations
 
 The current executable generator writes tests into this repository, not into
 the analyzed target project. This matters for sample targets such as
@@ -80,6 +85,8 @@ Generated output:
 
 ```text
 generated_tests/cutepetsboston/test_generated_dataclass_properties.py
+generated_tests/cutepetsboston/test_generated_dataclass_hypothesis.py
+generated_tests/cutepetsboston/test_generated_helper_boundaries.py
 generated_tests/cutepetsboston/README.md
 ```
 
@@ -90,10 +97,13 @@ the target checkout on `PYTHONPATH`:
 PYTHONPATH=/path/to/CutePetsBoston pytest generated_tests/cutepetsboston
 ```
 
-The default generator is intentionally conservative. It emits executable tests
-for public `format*` dataclass transformations with simple string/list
-observability or exact optional-field passthrough. It reports the rest as
-review candidates, including publish methods, private helpers, branch-only
+The default generator is intentionally conservative. It emits executable example
+tests for public `format*` dataclass transformations with simple string/list
+observability or exact optional-field passthrough. It also emits optional
+Hypothesis tests for those same supported relations. It emits lower-confidence
+helper-boundary tests when a private helper boundary can be driven by a simple
+string input. It reports the rest as review candidates, including publish
+methods, helper boundaries that need custom input construction, branch-only
 facts, lossy required-field candidates, and relations whose assertion oracle is
 not yet strong enough.
 
@@ -170,6 +180,23 @@ This says the analyzer found a numeric boundary around `len(text)`. A generated
 test can cover `499`, `500`, and `501` length cases and verify truncation or
 validation behavior.
 
+```text
+boundary_behavior:
+social_posters.instagram	PosterInstagram	PosterInstagram._format_caption	caption	upper_exclusive	2200	abstractions	Post	text	<primitive>	str	<return>	max_length
+```
+
+This says a generic `caption < 2200` bound has been lifted to a behavior-level
+summary: `Post.text` contributes to a primitive string return with max-length
+semantics.
+
+```text
+helper_boundary_behavior:
+adoption_sources.rescue_groups	SourceRescueGroups	SourceRescueGroups._clean_description	text	upper_exclusive	497	description	return	truncate_or_include
+```
+
+This says a private helper boundary can be associated with its public input
+parameter and return behavior, instead of staying as an untyped numeric fact.
+
 6. Validate generated tests by executing them.
 
 The first validation loop should be mechanical:
@@ -181,11 +208,85 @@ The first validation loop should be mechanical:
 - decide whether the failure means a program bug, a weak oracle, or an
   over-approximate static property
 
-This project does not yet implement a validation runner beyond producing
-pytest-compatible tests and a generated report, but the generated README records
-the command users should run.
+This project includes a validation runner that executes the generated pytest
+suite against a target checkout and writes a pass/fail/skip report:
 
-7. Surface contradictions and review candidates to users.
+```bash
+python3 tools/validate_generated_tests.py \
+  generated_tests/cutepetsboston \
+  --target-project /path/to/CutePetsBoston
+```
+
+The generated README records the direct pytest command and separates emitted
+executable cases from candidate relations left for review.
+
+7. Measure combined source coverage.
+
+The coverage-statistics runner uses the Python standard-library `trace` module,
+so it does not require `coverage.py`. It can run the target project's handwritten
+tests and the generated tests together, then report line coverage for target
+source files:
+
+```bash
+python3 tools/coverage_stats.py \
+  --target-project /path/to/CutePetsBoston \
+  --target-tests /path/to/CutePetsBoston/tests \
+  --generated-tests generated_tests/cutepetsboston \
+  --report /tmp/sps-coverage-stats.md
+```
+
+For the local CutePetsBoston checkout used during development, the combined run
+covered `461/911` target source lines (`50.6%`) with `137` pytest cases passing.
+
+8. Measure evaluation yield and coverage deltas.
+
+The evaluation-statistics runner combines inline SVG charts, relation-to-test
+yield, and three coverage runs: handwritten tests only, generated tests only,
+and both together.
+
+```bash
+python3 tools/evaluation_stats.py \
+  --analysis-dir /tmp/sps-analysis-run \
+  --target-project /path/to/CutePetsBoston \
+  --target-tests /path/to/CutePetsBoston/tests \
+  --generated-tests generated_tests/cutepetsboston \
+  --report /tmp/sps-evaluation-stats.md
+```
+
+For the local CutePetsBoston checkout used during development:
+
+- Unique transform relations tested: `24/40` (`60.0%`).
+- Helper boundary cases emitted: `3/5` (`60.0%`).
+- Handwritten target tests covered `427/911` lines (`46.9%`).
+- Generated tests covered `260/911` lines (`28.5%`).
+- Combined tests covered `461/911` lines (`50.6%`), adding `34` covered lines
+  and `3.7` percentage points over handwritten tests.
+
+9. Run mutation evaluation.
+
+The mutation runner creates a temporary copy of the target checkout, applies
+small relation-guided transform mutants and solver-adjacent boundary mutants,
+then compares handwritten, generated, and combined mutation scores.
+
+```bash
+python3 tools/mutation_eval.py \
+  --analysis-dir /tmp/sps-analysis-run \
+  --target-project /path/to/CutePetsBoston \
+  --target-tests /path/to/CutePetsBoston/tests \
+  --generated-tests generated_tests/cutepetsboston \
+  --max-mutants 12 \
+  --report /tmp/sps-mutation-eval.md
+```
+
+For the local CutePetsBoston checkout used during development:
+
+- Handwritten target tests killed `12/12` mutants (`100.0%`).
+- Generated tests killed `5/12` mutants (`41.7%`).
+- Combined tests killed `12/12` mutants (`100.0%`).
+- Generated tests killed the core transform mutants in `abstractions.py`, but
+  most platform-specific boundary mutants survived generated-only testing.
+
+10. Surface contradictions and review candidates to users.
 
 Examples:
 
@@ -194,32 +295,34 @@ Examples:
 - an optional field used in a branch without sufficient test coverage
 - a suspicious mutable or frozen dataclass design
 
-8. User decides whether to modify the Python program, the Souffle models, or the generated tests.
+11. User decides whether to modify the Python program, the Souffle models, or the generated tests.
 
-9. Re-run extraction and update the knowledge base.
+12. Re-run extraction and update the knowledge base.
 
 # Remaining potential work
 
-- Resolve imports and type identities instead of relying mostly on names.
+- Improve import and type-identity resolution beyond the current `resolved_*`
+  type-reference facts.
 - Add more precise call-boundary summaries so arbitrary SDK/API return values do not over-approximate semantic influence.
 - Add branch-local return facts that connect a condition to a specific returned constructor.
 - Add CFG/control-dependence facts so validation guards and returned constructors can be linked more precisely.
-- Add lightweight alias/points-to facts so local field reads/writes are less name-based.
-- Examine the current Souffle rules for precision, redundancy, performance, and whether their derived relations are actually useful for test generation.
-- Expand executable property/fuzz tests directly from the test-target CSV
-  outputs. The current generator starts with conservative pytest examples;
-  future generators should add Hypothesis strategies for optional fields,
-  boundary values, and dataclass combinations.
-- Feed test execution results back into the knowledge base.
-- Add mutation-testing experiments inspired by *The Fuzzing Book*: mutate target
-  code or generated inputs, rerun property-derived tests, and measure whether
-  the framework catches the injected behavioral change.
+- Extend alias/points-to analysis beyond the current local dependency and
+  import-alias facts so object identity is less name-based.
+- Expand executable property/fuzz tests beyond the currently supported
+  transform relations and simple helper boundaries, especially public boundary
+  values, branch conditions, and dataclass combinations.
+- Use the new boundary-behavior relations directly in generated tests, so
+  platform-specific boundary tests come from `boundary_behavior.csv` instead of
+  only raw numeric-bound rows.
+- Feed generated-test pass/fail/skip results back into the knowledge base.
+- Expand mutation testing beyond the current relation-guided transform and
+  solver-adjacent boundary mutants, including generated-input mutation and
+  branch-condition mutation.
 - Add concolic testing experiments that combine concrete execution with
   SAT/SMT solving for branch conditions and numeric/string boundaries.
-- Add coverage statistics for the generated-test framework: line/branch
-  coverage, dataclass-field coverage, relation coverage, high-confidence
-  property coverage, and coverage deltas compared with the target project's
-  handwritten tests.
+- Expand evaluation statistics beyond the current relation-yield, line coverage
+  deltas, and mutation score: branch coverage, dataclass-field coverage,
+  relation coverage, and high-confidence property coverage.
 
 # Potential static-analysis layers
 
@@ -260,18 +363,29 @@ validate those properties with concrete generated tests.
   same abstract method for accepted dataclasses, returned dataclasses,
   success/failure shapes, required-field observability, and effect profiles.
 
-# Souffle features to explore
+# Souffle features used or still worth exploring
 
-- Stratified negation: useful for review candidates such as unread required fields, missing overrides, untested boundaries, and terminal dataclasses.
-- Aggregates: useful for summaries and prioritization, such as counting transformations per dataclass or effects per method.
-- Records: useful for packaging structured metadata such as field shapes, dataclass shapes, effect events, and function links.
-- Transitive recursion: useful for reachable dataclass transformations, inheritance chains, call-chain reachability, and multi-step dataflow.
-- Components: useful for keeping the growing rule layer modular, for example separating schema, class, transform, and test-target rules.
-- Functors: useful for limited normalization or classification, but should be used carefully so Souffle does not become string-processing glue.
-- Eqrel / equivalence relations: useful for import aliases, type identity resolution, and alias-like relations between names.
-- Subsumption or lattice-style reasoning: potentially useful later for ranking candidate severity or merging abstract states.
-- Choice: useful for representative examples and compact test-seed selection, but not for core analysis where completeness matters.
-- Profile to find optimal order of atoms in the body of a rule.
+Already used:
+
+- Records: package field shapes, dataclass shapes, effect events, and function links.
+- Aggregates: count fields by required, optional, defaulted, and factory-backed status.
+- Stratified negation: surface review candidates such as entry/terminal dataclasses
+  and unread required fields.
+- Transitive recursion: derive reachable dataclass transformations.
+- Arithmetic functors: generate nearby boundary-test candidates from numeric
+  comparisons.
+
+Still worth exploring:
+
+- Components: keep the growing rule layer modular, for example separating schema,
+  class, transform, and test-target rules.
+- Eqrel / equivalence relations: improve import aliases, type identity
+  resolution, and alias-like relations between names.
+- Subsumption or lattice-style reasoning: rank candidate severity or merge
+  abstract states.
+- Choice: select representative examples and compact test seeds, but not for
+  core analysis where completeness matters.
+- Profiling: find better atom order and rule structure as the models grow.
 
 # Related works and references
 
@@ -303,8 +417,8 @@ by prior tools and analysis traditions:
   Binkley's interprocedural slicing line of work, summarized in
   [Interprocedural Slicing Using Dependence Graphs](https://research.cs.wisc.edu/wpis/papers/toplas90.pdf).
 - [QuickCheck](https://hackage.haskell.org/package/QuickCheck) and
-  [Hypothesis](https://hypothesis.readthedocs.io/) motivate the eventual step
-  from derived relations to executable property-based tests.
+  [Hypothesis](https://hypothesis.readthedocs.io/) motivate expanding from the
+  current transform-focused property tests to richer property-based tests.
 - [Alperen Keles](https://alperenkeles.com/) is a useful property-based testing
   reference to review as this project turns derived semantic relations into
   stronger generated tests.

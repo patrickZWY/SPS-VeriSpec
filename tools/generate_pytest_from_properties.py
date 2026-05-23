@@ -44,11 +44,36 @@ class ExecutableCase:
     source_module: str
     source_class: str
     source_field: str
+    source_type: str
     target_module: str
     target_class: str
     target_arg: str
+    target_type: str
+    target_kind: str
     assertion: str
     input_kwargs: dict[str, object]
+
+
+@dataclass(frozen=True)
+class FunctionParam:
+    module_name: str
+    qualified_name: str
+    name: str
+    type_repr: str
+    position: int
+
+
+@dataclass(frozen=True)
+class HelperBoundaryCase:
+    id: str
+    module_name: str
+    class_name: str
+    method_name: str
+    param_name: str
+    input_length: int
+    expected_max_length: int
+    relation_kind: str
+    expression: str
 
 
 def parse_args() -> argparse.Namespace:
@@ -108,6 +133,36 @@ def load_dataclass_fields(facts_dir: Path) -> dict[tuple[str, str], list[Datacla
     return fields
 
 
+def load_function_params(facts_dir: Path) -> dict[tuple[str, str], list[FunctionParam]]:
+    params: dict[tuple[str, str], list[FunctionParam]] = {}
+    for row in read_tsv(facts_dir / "function_param.facts"):
+        if len(row) < 6:
+            continue
+        module_name, qualified_name, name, type_repr, position, _line = row[:6]
+        param = FunctionParam(
+            module_name=module_name,
+            qualified_name=qualified_name,
+            name=name,
+            type_repr=type_repr,
+            position=int(position),
+        )
+        params.setdefault((module_name, qualified_name), []).append(param)
+
+    for values in params.values():
+        values.sort(key=lambda param: param.position)
+    return params
+
+
+def load_method_owners(facts_dir: Path) -> dict[tuple[str, str], str]:
+    owners: dict[tuple[str, str], str] = {}
+    for row in read_tsv(facts_dir / "method_of_class.facts"):
+        if len(row) < 3:
+            continue
+        module_name, class_name, qualified_name = row[:3]
+        owners[(module_name, qualified_name)] = class_name
+    return owners
+
+
 def load_transform_modules(test_dir: Path) -> dict[tuple[str, str, str], tuple[str, str]]:
     modules: dict[tuple[str, str, str], tuple[str, str]] = {}
     for row in read_tsv(test_dir / "method_dataclass_transform.csv"):
@@ -130,6 +185,112 @@ def load_targets(test_dir: Path) -> list[TransformTarget]:
                 continue
             targets.append(TransformTarget(*row[:7], target_kind=target_kind))
     return targets
+
+
+def load_helper_boundary_cases(
+    semantic_dir: Path,
+    params: dict[tuple[str, str], list[FunctionParam]],
+    owners: dict[tuple[str, str], str],
+    max_cases: int,
+) -> tuple[list[HelperBoundaryCase], list[str]]:
+    cases: list[HelperBoundaryCase] = []
+    skipped: list[str] = []
+    seen: set[tuple[str, str, str, int, int]] = set()
+    emitted_helpers: set[tuple[str, str]] = set()
+
+    for row in read_tsv(semantic_dir / "numeric_bound.csv"):
+        if len(row) < 6:
+            continue
+        module_name, qualified_name, expression, relation_kind, bound_text, _line = row[:6]
+        method = method_name(qualified_name)
+        if not method.startswith("_"):
+            continue
+        if not expression.startswith("len("):
+            if (module_name, qualified_name) in emitted_helpers:
+                continue
+            skipped.append(
+                f"- `{qualified_name}` boundary skipped: only `len(...)` helper boundaries are generated automatically."
+            )
+            continue
+
+        try:
+            bound = int(bound_text)
+        except ValueError:
+            skipped.append(
+                f"- `{qualified_name}` boundary skipped: non-integer bound `{bound_text}`."
+            )
+            continue
+        if bound <= 0:
+            skipped.append(
+                f"- `{qualified_name}` boundary skipped: non-positive bound `{bound}` needs custom input construction."
+            )
+            continue
+
+        class_name = owners.get((module_name, qualified_name))
+        if class_name is None:
+            skipped.append(
+                f"- `{qualified_name}` boundary skipped: method owner class was not resolved."
+            )
+            continue
+
+        non_self_params = [
+            param
+            for param in params.get((module_name, qualified_name), [])
+            if param.name not in {"self", "cls"}
+        ]
+        string_params = [
+            param
+            for param in non_self_params
+            if "str" in param.type_repr.lower() and "list" not in param.type_repr.lower()
+        ]
+        if len(non_self_params) != 1 or len(string_params) != 1:
+            skipped.append(
+                f"- `{qualified_name}` boundary skipped: helper has parameters that need custom construction."
+            )
+            continue
+
+        param = string_params[0]
+        for variant, input_length in (
+            ("below", max(bound - 1, 0)),
+            ("at", bound),
+            ("above", bound + 1),
+        ):
+            if len(cases) >= max_cases:
+                skipped.append("- Helper boundary generation stopped after reaching --max-cases.")
+                return cases, skipped
+            key = (module_name, qualified_name, param.name, input_length, bound)
+            if key in seen:
+                continue
+            seen.add(key)
+            emitted_helpers.add((module_name, qualified_name))
+            cases.append(
+                HelperBoundaryCase(
+                    id=safe_id(
+                        qualified_name,
+                        param.name,
+                        expression,
+                        relation_kind,
+                        str(bound),
+                        variant,
+                    ),
+                    module_name=module_name,
+                    class_name=class_name,
+                    method_name=method,
+                    param_name=param.name,
+                    input_length=input_length,
+                    expected_max_length=bound,
+                    relation_kind=relation_kind,
+                    expression=expression,
+                )
+            )
+
+    if emitted_helpers:
+        skipped = [
+            item
+            for item in skipped
+            if not any(f"`{qualified_name}`" in item for _, qualified_name in emitted_helpers)
+        ]
+    return cases, skipped
 
 
 def method_name(qualified_name: str) -> str:
@@ -315,9 +476,12 @@ def build_cases(
                     source_module=source_module,
                     source_class=target.source_class,
                     source_field=target.source_field,
+                    source_type=source_field.type_repr,
                     target_module=target_module,
                     target_class=target.target_class,
                     target_arg=target.target_arg,
+                    target_type=target_field.type_repr if target_field else "",
+                    target_kind=target.target_kind,
                     assertion=assertion,
                     input_kwargs=make_input_kwargs(source_fields, target.source_field, value),
                 )
@@ -340,7 +504,10 @@ def render_cases(cases: list[ExecutableCase]) -> str:
                     f"        'source_module': {case.source_module!r},",
                     f"        'source_class': {case.source_class!r},",
                     f"        'source_field': {case.source_field!r},",
+                    f"        'source_type': {case.source_type!r},",
                     f"        'target_arg': {case.target_arg!r},",
+                    f"        'target_type': {case.target_type!r},",
+                    f"        'target_kind': {case.target_kind!r},",
                     f"        'assertion': {case.assertion!r},",
                     f"        'input_kwargs': {python_dict_literal(case.input_kwargs)},",
                     "    }",
@@ -448,12 +615,239 @@ def test_generated_dataclass_transform_property(case):
 '''
 
 
+def render_helper_boundary_cases(cases: list[HelperBoundaryCase]) -> str:
+    entries = []
+    for case in cases:
+        entries.append(
+            "\n".join(
+                [
+                    "    {",
+                    f"        'id': {case.id!r},",
+                    f"        'module_name': {case.module_name!r},",
+                    f"        'class_name': {case.class_name!r},",
+                    f"        'method_name': {case.method_name!r},",
+                    f"        'param_name': {case.param_name!r},",
+                    f"        'input_length': {case.input_length!r},",
+                    f"        'expected_max_length': {case.expected_max_length!r},",
+                    f"        'relation_kind': {case.relation_kind!r},",
+                    f"        'expression': {case.expression!r},",
+                    "    }",
+                ]
+            )
+        )
+    return "[\n" + ",\n".join(entries) + "\n]"
+
+
+def render_helper_boundary_test_file(cases: list[HelperBoundaryCase]) -> str:
+    return f'''"""
+Generated by tools/generate_pytest_from_properties.py.
+
+These are lower-confidence helper-boundary tests. They may call private helper
+methods directly when the static boundary relation can be driven with a simple
+string argument.
+"""
+
+from __future__ import annotations
+
+import abc
+import importlib
+
+import pytest
+
+
+HELPER_BOUNDARY_CASES = {render_helper_boundary_cases(cases)}
+
+
+def _load_class(module_name, class_name):
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        pytest.skip(f"Cannot import {{module_name}}: {{exc}}")
+    return getattr(module, class_name)
+
+
+def _dummy_method(*args, **kwargs):
+    return None
+
+
+def _instance_for(cls):
+    try:
+        return cls()
+    except TypeError:
+        attrs = {{}}
+        abstract_names = getattr(cls, "__abstractmethods__", set())
+        for name in abstract_names:
+            descriptor = getattr(cls, name, None)
+            if isinstance(descriptor, property):
+                attrs[name] = property(lambda self, _name=name: f"generated-{{_name}}")
+            else:
+                attrs[name] = _dummy_method
+
+        harness = abc.ABCMeta(f"Generated{{cls.__name__}}Harness", (cls,), attrs)
+        return harness()
+
+
+@pytest.mark.parametrize("case", HELPER_BOUNDARY_CASES, ids=[case["id"] for case in HELPER_BOUNDARY_CASES])
+def test_generated_helper_boundary(case):
+    owner_cls = _load_class(case["module_name"], case["class_name"])
+    owner = _instance_for(owner_cls)
+    value = "x" * case["input_length"]
+
+    result = getattr(owner, case["method_name"])(value)
+
+    assert isinstance(result, str)
+    assert len(result) <= case["expected_max_length"]
+'''
+
+
+def render_hypothesis_test_file(cases: list[ExecutableCase]) -> str:
+    return f'''"""
+Generated by tools/generate_pytest_from_properties.py.
+
+These optional property tests use Hypothesis to vary source dataclass fields
+for the same conservative transform relations as the generated example tests.
+"""
+
+from __future__ import annotations
+
+import abc
+import importlib
+
+import pytest
+
+pytest.importorskip("hypothesis")
+from hypothesis import given, settings, strategies as st
+
+
+CASES = {render_cases(cases)}
+
+
+def _load_class(module_name, class_name):
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        pytest.skip(f"Cannot import {{module_name}}: {{exc}}")
+    return getattr(module, class_name)
+
+
+def _dummy_method(*args, **kwargs):
+    return None
+
+
+def _instance_for(cls):
+    try:
+        return cls()
+    except TypeError:
+        attrs = {{}}
+        abstract_names = getattr(cls, "__abstractmethods__", set())
+        for name in abstract_names:
+            descriptor = getattr(cls, name, None)
+            if isinstance(descriptor, property):
+                attrs[name] = property(lambda self, _name=name: f"generated-{{_name}}")
+            else:
+                attrs[name] = _dummy_method
+
+        harness = abc.ABCMeta(f"Generated{{cls.__name__}}Harness", (cls,), attrs)
+        return harness()
+
+
+def _assert_observed(actual, expected):
+    if actual == expected:
+        return
+
+    if expected is None:
+        assert actual is None
+        return
+
+    expected_text = str(expected)
+
+    if isinstance(actual, str):
+        assert expected_text in actual
+        return
+
+    if isinstance(actual, list):
+        normalized = expected_text.lower().replace(" ", "")
+        location_prefix = expected_text.split(",", 1)[0].capitalize()
+        actual_texts = [str(item) for item in actual]
+        actual_normalized = [item.lower().replace(" ", "") for item in actual_texts]
+        assert (
+            expected_text in actual_texts
+            or normalized in actual_normalized
+            or location_prefix in actual_texts
+        )
+        return
+
+    assert actual == expected
+
+
+def _safe_text(min_size=1, max_size=24):
+    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_"
+    return st.text(alphabet=alphabet, min_size=min_size, max_size=max_size)
+
+
+def _strategy_for_case(case):
+    name = case["source_field"].lower()
+    type_repr = case["source_type"].lower()
+
+    if case["assertion"] == "equals" and case["target_kind"] == "optional":
+        if "url" in name or "link" in name:
+            return st.one_of(
+                st.none(),
+                st.just(""),
+                _safe_text(max_size=20).map(lambda value: f"https://example.com/{{value}}"),
+            )
+        return st.one_of(st.none(), st.just(""), _safe_text(max_size=32))
+
+    if "list" in type_repr:
+        return st.lists(_safe_text(max_size=12), min_size=1, max_size=4)
+    if "bool" in type_repr:
+        return st.booleans()
+    if "int" in type_repr:
+        return st.integers(min_value=-100, max_value=100)
+    if name == "location":
+        return _safe_text(max_size=16).map(lambda value: f"Generated {{value}}, MA")
+    if "url" in name or "link" in name:
+        return _safe_text(max_size=20).map(lambda value: f"https://example.com/{{value}}")
+    return _safe_text(max_size=32)
+
+
+def _run_case(case, source_value):
+    source_cls = _load_class(case["source_module"], case["source_class"])
+    owner_cls = _load_class(case["class_module"], case["class_name"])
+
+    input_kwargs = dict(case["input_kwargs"])
+    input_kwargs[case["source_field"]] = source_value
+    source = source_cls(**input_kwargs)
+
+    owner = _instance_for(owner_cls)
+    result = getattr(owner, case["method_name"])(source)
+    actual = getattr(result, case["target_arg"])
+
+    if case["assertion"] == "equals":
+        assert actual == source_value
+    else:
+        _assert_observed(actual, source_value)
+
+
+@pytest.mark.parametrize("case", CASES, ids=[case["id"] for case in CASES])
+def test_generated_dataclass_transform_property_hypothesis(case):
+    @settings(max_examples=25, deadline=None)
+    @given(source_value=_strategy_for_case(case))
+    def property_check(source_value):
+        _run_case(case, source_value)
+
+    property_check()
+'''
+
+
 def write_report(
     path: Path,
     analysis_dir: Path,
     tests_path: Path,
     cases: list[ExecutableCase],
+    helper_cases: list[HelperBoundaryCase],
     skipped: list[str],
+    helper_skipped: list[str],
 ) -> None:
     cwd = Path.cwd().resolve()
 
@@ -464,13 +858,19 @@ def write_report(
             return str(path)
 
     tests_display = display(tests_path)
+    hypothesis_path = tests_path.with_name("test_generated_dataclass_hypothesis.py")
+    helper_boundary_path = tests_path.with_name("test_generated_helper_boundaries.py")
     lines = [
         "# Generated Test Report",
         "",
         f"- Analysis directory: `{analysis_dir}`",
         f"- Test file: `{tests_display}`",
+        f"- Hypothesis test file: `{display(hypothesis_path)}`",
+        f"- Helper boundary test file: `{display(helper_boundary_path)}`",
         f"- Executable cases emitted: {len(cases)}",
+        f"- Helper boundary cases emitted: {len(helper_cases)}",
         f"- Candidate relations left as review items: {len(skipped)}",
+        f"- Helper boundary relations left as review items: {len(helper_skipped)}",
         "",
         "## Run",
         "",
@@ -478,6 +878,24 @@ def write_report(
         "",
         "```bash",
         f"PYTHONPATH=/path/to/target-project pytest {display(tests_path.parent)}",
+        "```",
+        "",
+        "Or run through the SPS-VeriSpec validation wrapper to produce a Markdown summary:",
+        "",
+        "```bash",
+        f"python3 tools/validate_generated_tests.py {display(tests_path.parent)} --target-project /path/to/target-project",
+        "```",
+        "",
+        "To produce relation-yield and coverage-delta evaluation stats:",
+        "",
+        "```bash",
+        f"python3 tools/evaluation_stats.py --analysis-dir {analysis_dir} --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests {display(tests_path.parent)} --report /tmp/sps-evaluation-stats.md",
+        "```",
+        "",
+        "To run mutation evaluation against handwritten, generated, and combined suites:",
+        "",
+        "```bash",
+        f"python3 tools/mutation_eval.py --analysis-dir {analysis_dir} --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests {display(tests_path.parent)} --max-mutants 12 --report /tmp/sps-mutation-eval.md",
         "```",
         "",
         "## Emitted Cases",
@@ -497,12 +915,30 @@ def write_report(
     else:
         lines.append("- No candidates were skipped.")
 
+    lines.extend(["", "## Helper Boundary Cases", ""])
+    if helper_cases:
+        for case in helper_cases:
+            lines.append(
+                f"- `{case.id}`: `{case.module_name}.{case.class_name}.{case.method_name}` "
+                f"with `{case.param_name}` length {case.input_length}; output length <= {case.expected_max_length}"
+            )
+    else:
+        lines.append("- No helper boundary cases were emitted.")
+
+    lines.extend(["", "## Helper Boundary Review Candidates", ""])
+    if helper_skipped:
+        lines.extend(helper_skipped)
+    else:
+        lines.append("- No helper boundary candidates were skipped.")
+
     lines.extend(
         [
             "",
             "## Notes",
             "",
             "The default generator only emits public `format*` method tests with string/list observations.",
+            "The Hypothesis file is optional at runtime and is skipped by pytest when Hypothesis is not installed.",
+            "Helper boundary tests are lower-confidence because they may call private helper methods directly.",
             "Relations involving publishing, private helpers, branch-only facts, lossy flows, or non-string outputs are kept as review candidates until stronger oracles are available.",
             "",
         ]
@@ -522,16 +958,41 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     fields = load_dataclass_fields(analysis_dir / "facts")
+    params = load_function_params(analysis_dir / "facts")
+    owners = load_method_owners(analysis_dir / "facts")
     modules = load_transform_modules(analysis_dir / "test_out")
     targets = load_targets(analysis_dir / "test_out")
     cases, skipped = build_cases(fields, modules, targets, args.max_cases)
+    helper_cases, helper_skipped = load_helper_boundary_cases(
+        analysis_dir / "semantic_out",
+        params,
+        owners,
+        args.max_cases,
+    )
 
     tests_path = output_dir / "test_generated_dataclass_properties.py"
+    hypothesis_path = output_dir / "test_generated_dataclass_hypothesis.py"
+    helper_boundary_path = output_dir / "test_generated_helper_boundaries.py"
     report_path = output_dir / "README.md"
     tests_path.write_text(render_test_file(cases), encoding="utf-8")
-    write_report(report_path, analysis_dir, tests_path, cases, skipped)
+    hypothesis_path.write_text(render_hypothesis_test_file(cases), encoding="utf-8")
+    helper_boundary_path.write_text(
+        render_helper_boundary_test_file(helper_cases),
+        encoding="utf-8",
+    )
+    write_report(
+        report_path,
+        analysis_dir,
+        tests_path,
+        cases,
+        helper_cases,
+        skipped,
+        helper_skipped,
+    )
 
     print(tests_path)
+    print(hypothesis_path)
+    print(helper_boundary_path)
     print(report_path)
 
 

@@ -1,9 +1,13 @@
 # Generated Test Report
 
-- Analysis directory: `/private/tmp/sps-testgen-run`
+- Analysis directory: `/private/tmp/sps-boundary-semantics-run`
 - Test file: `generated_tests/cutepetsboston/test_generated_dataclass_properties.py`
+- Hypothesis test file: `generated_tests/cutepetsboston/test_generated_dataclass_hypothesis.py`
+- Helper boundary test file: `generated_tests/cutepetsboston/test_generated_helper_boundaries.py`
 - Executable cases emitted: 32
+- Helper boundary cases emitted: 3
 - Candidate relations left as review items: 16
+- Helper boundary relations left as review items: 3
 
 ## Run
 
@@ -11,6 +15,24 @@ Set `PYTHONPATH` to the target project checkout and run pytest against this dire
 
 ```bash
 PYTHONPATH=/path/to/target-project pytest generated_tests/cutepetsboston
+```
+
+Or run through the SPS-VeriSpec validation wrapper to produce a Markdown summary:
+
+```bash
+python3 tools/validate_generated_tests.py generated_tests/cutepetsboston --target-project /path/to/target-project
+```
+
+To produce relation-yield and coverage-delta evaluation stats:
+
+```bash
+python3 tools/evaluation_stats.py --analysis-dir /private/tmp/sps-boundary-semantics-run --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests generated_tests/cutepetsboston --report /tmp/sps-evaluation-stats.md
+```
+
+To run mutation evaluation against handwritten, generated, and combined suites:
+
+```bash
+python3 tools/mutation_eval.py --analysis-dir /private/tmp/sps-boundary-semantics-run --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests generated_tests/cutepetsboston --max-mutants 12 --report /tmp/sps-mutation-eval.md
 ```
 
 ## Emitted Cases
@@ -67,7 +89,21 @@ PYTHONPATH=/path/to/target-project pytest generated_tests/cutepetsboston
 - `PosterMastodon.publish` skipped: default generator only emits public `format*` transforms.
 - `PosterMastodon.publish` skipped: default generator only emits public `format*` transforms.
 
+## Helper Boundary Cases
+
+- `SourceRescueGroups._clean_description-description-len-text--lower_exclusive-500-below`: `adoption_sources.rescue_groups.SourceRescueGroups._clean_description` with `description` length 499; output length <= 500
+- `SourceRescueGroups._clean_description-description-len-text--lower_exclusive-500-at`: `adoption_sources.rescue_groups.SourceRescueGroups._clean_description` with `description` length 500; output length <= 500
+- `SourceRescueGroups._clean_description-description-len-text--lower_exclusive-500-above`: `adoption_sources.rescue_groups.SourceRescueGroups._clean_description` with `description` length 501; output length <= 500
+
+## Helper Boundary Review Candidates
+
+- `PosterBluesky._build_text_and_facets` boundary skipped: only `len(...)` helper boundaries are generated automatically.
+- `PosterInstagram._format_caption` boundary skipped: only `len(...)` helper boundaries are generated automatically.
+- `PosterMastodon._validated_main_limit` boundary skipped: only `len(...)` helper boundaries are generated automatically.
+
 ## Notes
 
 The default generator only emits public `format*` method tests with string/list observations.
+The Hypothesis file is optional at runtime and is skipped by pytest when Hypothesis is not installed.
+Helper boundary tests are lower-confidence because they may call private helper methods directly.
 Relations involving publishing, private helpers, branch-only facts, lossy flows, or non-string outputs are kept as review candidates until stronger oracles are available.

@@ -318,6 +318,10 @@ It emits:
 - `string_composition_target`: dataclass fields constructed with f-strings, joins, format calls, or simple concatenation.
 - `numeric_bound`: numeric comparison and slice bounds.
 - `boundary_test_candidate`: `below`, `at`, and `above` test values for each bound.
+- `boundary_behavior`: dataclass-input to output-surface behavior for bounds,
+  such as primitive string return max-length behavior.
+- `helper_boundary_behavior`: helper input-parameter to return behavior for
+  simple private helper truncation/length boundaries.
 - `numeric_bound_conflict_candidate`: inconsistent inclusive lower/upper-bound candidates.
 
 These relations are intentionally conservative. They are meant to generate
@@ -357,9 +361,6 @@ These are sufficient for a first generic test-target model in
 
 Useful next upgrades:
 
-- `resolved_extends(Module, ClassName, BaseModule, BaseName)`
-- `resolved_param_type_ref(Module, QualifiedName, ParamName, TypeModule, TypeName)`
-- `resolved_return_type_ref(Module, QualifiedName, TypeModule, TypeName)`
 - more precise call-boundary flow summaries so arbitrary call results do not over-approximate downstream constructor arguments
 - branch-local return facts that connect a condition to a specific returned constructor
 - CFG/control-dependence facts for validation and guarded-effect reasoning
@@ -399,8 +400,9 @@ The current project would get test targets such as:
 
 ## Validation and presentation
 
-After generating tests, the framework should validate them by running pytest
-against the user's target checkout and collecting a structured result:
+After generating tests, the framework can validate them by running pytest
+against the user's target checkout and collecting a structured result with
+`tools/validate_generated_tests.py`:
 
 - passed generated tests
 - assertion failures tied back to their source relation
@@ -415,8 +417,9 @@ too strong. The report should preserve that distinction.
 
 ## Future testing directions
 
-- Hypothesis/property-based generation from dataclass schemas, optional fields,
-  numeric bounds, string bounds, and contract families.
+- Extend Hypothesis/property-based generation beyond the current transform
+  properties into dataclass schemas, optional field combinations, numeric
+  bounds, string bounds, and contract families.
 - Mutation-testing experiments inspired by *The Fuzzing Book*: mutate program
   statements, dataclass defaults, field mappings, branch predicates, or
   generated inputs, then measure whether property-derived tests detect the
@@ -424,9 +427,10 @@ too strong. The report should preserve that distinction.
 - Concolic testing with SAT/SMT solvers: execute concrete paths, collect path
   constraints from branch and boundary facts, then solve for inputs that reach
   uncovered or suspicious paths.
-- Coverage statistics for the generated-test framework: source line and branch
-  coverage, dataclass-field coverage, derived-relation coverage, contract-family
-  coverage, and coverage deltas relative to handwritten tests.
+- Extend evaluation statistics beyond current source-line coverage,
+  relation-to-test yield, and coverage deltas: branch coverage, dataclass-field
+  coverage, derived-relation coverage, contract-family coverage, and mutation
+  score.
 
 ## Bottom line
 

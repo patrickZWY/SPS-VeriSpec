@@ -110,6 +110,38 @@
 )
 .output numeric_bound_conflict_candidate
 
+.decl max_length_bound_kind(bound_kind:symbol)
+
+.decl boundary_behavior(
+  function_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  bound_kind:symbol,
+  bound_value:number,
+  input_module:symbol,
+  input_class:symbol,
+  input_field:symbol,
+  output_module:symbol,
+  output_class:symbol,
+  output_field:symbol,
+  behavior_kind:symbol
+)
+.output boundary_behavior
+
+.decl helper_boundary_behavior(
+  function_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  bound_kind:symbol,
+  bound_value:number,
+  input_param:symbol,
+  output_kind:symbol,
+  behavior_kind:symbol
+)
+.output helper_boundary_behavior
+
 semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, "constructor_arg") :-
   resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
   dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
@@ -212,3 +244,81 @@ numeric_bound_conflict_candidate(FM, Q, Expr, Lower, Upper) :-
   numeric_bound(FM, Q, Expr, "lower_inclusive", Lower, _),
   numeric_bound(FM, Q, Expr, "upper_inclusive", Upper, _),
   Lower > Upper.
+
+max_length_bound_kind("upper_inclusive").
+max_length_bound_kind("upper_exclusive").
+
+boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, SM, Source, SourceField, TM, Target, TargetField, "truncate_or_include") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  Expr = SourceParamField,
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  SourceParamField = cat(SourceParam, cat(".", SourceField)).
+
+boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, SM, Source, SourceField, TM, Target, TargetField, "input_length_to_output_max_length") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  Expr = LenSourceParamField,
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  LenSourceParamField = cat("len(", cat(SourceParam, cat(".", cat(SourceField, ")")))).
+
+boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, SM, Source, SourceField, "<primitive>", "str", "<return>", "max_length") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  attribute_read(FM, Q, SourceParam, SourceField, _),
+  Expr = LocalName,
+  local_depends_on_field(FM, Q, LocalName, SourceParam, SourceField, _).
+
+boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, SM, Source, SourceField, TM, Target, TargetField, "split_or_single") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  function_name(FM, Q, "_build_caption_thread"),
+  Target = "CaptionThread".
+
+helper_boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, Param, "return", "max_length") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  function_param(FM, Q, Param, Type, _, _),
+  Type = "str",
+  Expr = LenParam,
+  LenParam = cat("len(", cat(Param, ")")).
+
+helper_boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, Param, "return", "max_length") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  function_param(FM, Q, Param, Type, _, _),
+  Type = "str",
+  Param != "self",
+  Expr = LenLocal,
+  LenLocal = cat("len(", cat(Local, ")")),
+  local_depends_on_field(FM, Q, Local, Source, _, _),
+  Source != "self".
+
+helper_boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, Param, "return", "truncate_or_include") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  function_param(FM, Q, Param, Type, _, _),
+  Type = "str",
+  Expr = Param.
+
+helper_boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, Param, "return", "truncate_or_include") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  function_param(FM, Q, Param, Type, _, _),
+  Type = "str",
+  Param != "self",
+  Expr = Local,
+  local_depends_on_field(FM, Q, Local, Source, _, _),
+  Source != "self".
