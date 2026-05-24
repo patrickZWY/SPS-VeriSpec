@@ -574,6 +574,11 @@ Still future work:
 
 - Turn conservative/risky properties into executable oracles.
 
+- Re-incorporate now unused rule_layer into our pipeline because it once
+  provided a lot of help to understand the CutePetsBoston project and the
+  lessons should be generalized and extended for others. A pure static
+  analysis layer by itself is not enough.
+
 - Broaden the benchmark set beyond CutePetsBoston, dacite, and the bounded
   Transformers slice. The next targets should be small-to-medium
   dataclass-heavy projects with low dependency friction, so regressions in
