@@ -51,7 +51,7 @@ class Worker(BaseWorker):
 from dataclasses import dataclass, field
 from typing import Optional
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, order=True, kw_only=True, slots=True, repr=False)
 class Item:
     name: str
     count: int = 1
@@ -63,6 +63,38 @@ class Item:
         rendered = {fact.render() for fact in facts}
 
         self.assertIn('dataclass("sample", "Item", 1, 5).', rendered)
+        self.assertIn(
+            'dataclass_option("sample", "Item", "init", "true", 0).',
+            rendered,
+        )
+        self.assertIn(
+            'dataclass_option("sample", "Item", "repr", "false", 1).',
+            rendered,
+        )
+        self.assertIn(
+            'dataclass_option("sample", "Item", "eq", "true", 0).',
+            rendered,
+        )
+        self.assertIn(
+            'dataclass_option("sample", "Item", "order", "true", 1).',
+            rendered,
+        )
+        self.assertIn(
+            'dataclass_option("sample", "Item", "frozen", "true", 1).',
+            rendered,
+        )
+        self.assertIn(
+            'dataclass_option("sample", "Item", "kw_only", "true", 1).',
+            rendered,
+        )
+        self.assertIn(
+            'dataclass_option("sample", "Item", "slots", "true", 1).',
+            rendered,
+        )
+        self.assertIn(
+            'dataclass_option("sample", "Item", "match_args", "true", 0).',
+            rendered,
+        )
         self.assertIn(
             'dataclass_field("sample", "Item", "name", "str", 0, 0, "missing", 1, 6).',
             rendered,
@@ -245,6 +277,104 @@ def run(poster: Poster, post: Post):
         )
         self.assertIn('returns_none("sample", "run", 18).', rendered)
 
+    def test_resolves_call_targets_arguments_and_return_calls(self) -> None:
+        facts = extract_facts_from_source(
+            """
+from dataclasses import dataclass
+
+@dataclass
+class Source:
+    raw: str
+
+@dataclass
+class Mid:
+    normalized: str
+
+@dataclass
+class Output:
+    label: str
+
+def normalize(source: Source) -> Mid:
+    return Mid(normalized=source.raw)
+
+class Pipeline:
+    def render(self, mid: Mid) -> Output:
+        return Output(label=mid.normalized)
+
+    def process(self, source: Source) -> Output:
+        mid = normalize(source)
+        return self.render(mid)
+            """.strip(),
+            module_name="sample",
+        )
+        rendered = {fact.render() for fact in facts}
+
+        self.assertIn(
+            'call_argument("sample", "Pipeline.process", "normalize", 1, "", "source", 23).',
+            rendered,
+        )
+        self.assertIn(
+            'call_target("sample", "Pipeline.process", "normalize", "sample", "normalize", "function", 23).',
+            rendered,
+        )
+        self.assertIn(
+            'resolved_call_result_assigned("sample", "Pipeline.process", "mid", "sample", "normalize", 23).',
+            rendered,
+        )
+        self.assertIn(
+            'return_call("sample", "Pipeline.process", "self.render", 24).',
+            rendered,
+        )
+        self.assertIn(
+            'call_target("sample", "Pipeline.process", "self.render", "sample", "Pipeline.render", "bound_method", 24).',
+            rendered,
+        )
+        self.assertIn(
+            'resolved_return_call("sample", "Pipeline.process", "sample", "Pipeline.render", 24).',
+            rendered,
+        )
+
+    def test_extracts_branch_atoms_and_protocol_call_events(self) -> None:
+        facts = extract_facts_from_source(
+            """
+from dataclasses import dataclass
+
+@dataclass
+class Post:
+    image_url: str | None
+    text: str
+
+class Publisher:
+    def authenticate(self):
+        return True
+
+    def publish(self, post: Post):
+        if not post.image_url:
+            return None
+        self.authenticate()
+        self.session.status_post(post.text)
+            """.strip(),
+            module_name="sample",
+        )
+        rendered = {fact.render() for fact in facts}
+
+        self.assertIn(
+            'branch_condition("sample", "Publisher.publish", "not post.image_url", 13).',
+            rendered,
+        )
+        self.assertIn(
+            'condition_atom("sample", "Publisher.publish", "post.image_url", "falsy", 13).',
+            rendered,
+        )
+        self.assertIn(
+            'call_protocol_event("sample", "Publisher.publish", "self", "authenticate", "self.authenticate", 15).',
+            rendered,
+        )
+        self.assertIn(
+            'call_protocol_event("sample", "Publisher.publish", "self.session", "publish", "self.session.status_post", 16).',
+            rendered,
+        )
+
     def test_extracts_semantic_value_and_numeric_facts(self) -> None:
         facts = extract_facts_from_source(
             """
@@ -356,6 +486,77 @@ class Poster(BasePoster):
             rendered,
         )
 
+    def test_extracts_common_ast_relations_and_local_aliases(self) -> None:
+        facts = extract_facts_from_source(
+            """
+from dataclasses import dataclass
+
+@dataclass
+class Batch:
+    pets: list[str]
+    status: str
+
+async def process(batch: Batch, client):
+    alias = batch
+    assert alias.status
+    for pet in alias.pets:
+        yield pet
+    names = [pet.upper() for pet in alias.pets if alias.status]
+    async with client.session() as session:
+        result = await session.fetch(names[0])
+    match alias:
+        case Batch(pets=pets) if alias.status:
+            return result
+            """.strip(),
+            module_name="sample",
+        )
+        rendered = {fact.render() for fact in facts}
+
+        self.assertIn(
+            'local_alias("sample", "process", "alias", "batch", 9).',
+            rendered,
+        )
+        self.assertIn(
+            'condition_reads_attribute("sample", "process", "batch", "status", 10).',
+            rendered,
+        )
+        self.assertIn(
+            'loop_iterates("sample", "process", "pet", "batch.pets", 11).',
+            rendered,
+        )
+        self.assertIn(
+            'yield_value("sample", "process", "pet", 12).',
+            rendered,
+        )
+        self.assertIn(
+            'comprehension_iterates("sample", "process", "pet", "batch.pets", 13).',
+            rendered,
+        )
+        self.assertIn(
+            'comprehension_filter("sample", "process", "pet", "batch.status", 13).',
+            rendered,
+        )
+        self.assertIn(
+            'with_resource("sample", "process", "client.session()", "session", 14).',
+            rendered,
+        )
+        self.assertIn(
+            'await_expr("sample", "process", "session.fetch(names[0])", 15).',
+            rendered,
+        )
+        self.assertIn(
+            'subscript_access("sample", "process", "names", "int", 15).',
+            rendered,
+        )
+        self.assertIn(
+            'match_subject("sample", "process", "batch", 16).',
+            rendered,
+        )
+        self.assertIn(
+            'match_case("sample", "process", "MatchClass:Batch", "batch.status", 17).',
+            rendered,
+        )
+
 
 class ExtractFactsFromProjectTests(unittest.TestCase):
     def test_extracts_main_module_facts_from_cutepetsboston(self) -> None:
@@ -410,6 +611,10 @@ class Example:
             self.assertEqual(
                 (facts_dir / "dataclass.facts").read_text(encoding="utf-8"),
                 "sample\tExample\t0\t4\n",
+            )
+            self.assertIn(
+                "sample\tExample\tfrozen\tfalse\t0\n",
+                (facts_dir / "dataclass_option.facts").read_text(encoding="utf-8"),
             )
             self.assertEqual(
                 (facts_dir / "dataclass_field.facts").read_text(encoding="utf-8"),

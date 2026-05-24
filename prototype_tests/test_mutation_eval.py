@@ -34,32 +34,54 @@ class MutationEvalTests(unittest.TestCase):
             (analysis / "semantic_out" / "numeric_bound.csv").write_text(
                 "\n".join(
                     [
-                        "sample\tclean\tlen(text)\tlower_exclusive\t500\t2",
-                        "sample\tclean\ttext\tupper_exclusive\t497\t3",
+                        "sample\tclean\tlen(text)\tlower_exclusive\t500\t8",
+                        "sample\tclean\ttext\tupper_exclusive\t497\t9",
                     ]
                 ),
                 encoding="utf-8",
             )
             (analysis / "facts" / "field_flows_to_constructor_arg.facts").write_text(
-                "sample\tPoster.format_post\tpet\tname\tPost\ttext\t4\n",
+                "sample\tPoster.format_post\tpet\tname\tPost\ttext\t10\n",
+                encoding="utf-8",
+            )
+            (analysis / "semantic_out" / "dataclass_collection_iteration.csv").write_text(
+                "sample\tformat_tags\tsample\tPost\ttags\ttag\tcomprehension\n",
+                encoding="utf-8",
+            )
+            (analysis / "semantic_out" / "multi_hop_interprocedural_field_flow.csv").write_text(
+                "sample\tPet\tname\tsample\tCaptionThread\tmain_caption\n",
+                encoding="utf-8",
+            )
+            (analysis / "test_out").mkdir()
+            (analysis / "test_out" / "method_dataclass_transform.csv").write_text(
+                "sample\tPoster\tPoster.build_formatting_pipeline\tsample\tPet\tsample\tCaptionThread\n",
                 encoding="utf-8",
             )
             (target / "sample.py").write_text(
                 "\n".join(
                     [
+                        "class Post: pass",
+                        "class PreparedCaption: pass",
+                        "class Poster:",
+                        "    def build_formatting_pipeline(self, pet):",
+                        "        pipeline = self.format_post",
+                        "        pipeline = self._prepare_caption",
                         "def clean(text):",
                         "    if len(text) > 500:",
                         "        return text[:497] + \"...\"",
                         "    text = pet.name",
+                        "    tags = [f'#{tag}' for tag in post.tags if tag]",
                         "    return text",
                     ]
                 ),
                 encoding="utf-8",
             )
 
-            mutants = generate_mutants(analysis, target, max_mutants=12)
+            mutants = generate_mutants(analysis, target, max_mutants=20)
 
             self.assertTrue(any(mutant.operator == "field_reference_replace" for mutant in mutants))
+            self.assertTrue(any(mutant.operator == "collection_iteration_replace" for mutant in mutants))
+            self.assertTrue(any(mutant.operator == "interprocedural_pipeline_replace" for mutant in mutants))
             self.assertTrue(any(mutant.operator == "operator_replace" for mutant in mutants))
             self.assertTrue(any(mutant.operator == "constant_replace" for mutant in mutants))
             self.assertTrue(any(mutant.operator == "string_literal_replace" for mutant in mutants))

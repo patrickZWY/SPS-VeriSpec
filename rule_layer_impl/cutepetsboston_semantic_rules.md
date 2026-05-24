@@ -6,7 +6,7 @@ model in `rule_layer/semantic_model.dl`.
 Generated with:
 
 ```bash
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-docs-check
+python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-slicing-ai-check
 ```
 
 ## Current semantic summary
@@ -21,6 +21,15 @@ python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-docs-chec
 - Numeric boundary candidates: 18
 - Boundary behaviors: 2
 - Helper boundary behaviors: 1
+- Backward output slices: 69
+- Function backward slices: 46
+- External-call field slices: 67
+- Control-dependence slices: 16
+- Abstract value states: 193
+- Abstract numeric states: 1
+- Nullable use-before-guard candidates: 12
+- Typestate transitions: 8
+- Protocol obligation candidates: 3
 
 ## Domain-level semantic flows
 
@@ -116,9 +125,10 @@ dataclasses:
 - `PosterMastodon._build_caption_thread` constructs `CaptionThread.was_split = False`
 - `PosterMastodon._build_caption_thread` constructs `CaptionThread.was_split = True`
 
-These facts are useful for success/failure test templates. They do not yet say
-which branch condition controls each literal; branch-local return facts are the
-next needed precision improvement.
+These facts are useful for success/failure test templates. Line-order
+control-dependence slices now provide a conservative bridge from conditions to
+nearby returns/exceptions/protocol events, but they still do not replace
+branch-local return facts or a full CFG.
 
 ## String composition targets
 
@@ -173,6 +183,46 @@ This is the level where generic boundaries become platform/helper-specific test
 intent. Raw facts still say "`caption` has an upper bound"; behavior facts say
 "this input contributes to a returned string max-length constraint."
 
+## Slicing and protocol candidates
+
+The new slicing layer exposes where field values influence observable outputs,
+external calls, and guards:
+
+- External-call slices show fields such as `Post.image_url`, `Post.text`,
+  `Post.tags`, `Post.link`, and `Post.alt_text` flowing into SDK, formatting,
+  print/debug, and HTTP call arguments.
+- Control-dependence slices connect guard atoms such as `post.image_url` to
+  nearby exceptions, returned dataclasses, or publish-like protocol events.
+- Backward output slices provide the reverse view of observable outputs, for
+  example which source fields can reach `CaptionThread.main_caption`.
+
+The typestate/protocol layer currently reports a small number of review
+candidates:
+
+- `main.run` calls a publish-like method on `poster`; whether this is safe
+  depends on the concrete poster implementation and earlier setup.
+- `PosterMastodon._post_thread` performs `status_post` calls on
+  `self._session`; the intended authentication happens through
+  `_ensure_ready_to_publish`, so this is a cross-method protocol obligation.
+
+These are useful review targets, not automatic bugs. They point to places where
+the tool should later learn cross-method typestate summaries.
+
+## Abstract-state candidates
+
+The abstract-state layer currently records:
+
+- optional dataclass fields that may be `None`
+- truthy/falsy and non-null states observed in branch conditions
+- string-length bounds from `len(...)` and slice facts
+- success/failure status literals such as `PostResult.success = True/False`
+- optional field reads that lack an obvious prior guard or validation event in
+  the same function
+
+The nullable-use candidates should be read as prompts for tests or review. Some
+are intentional because the code tolerates `None`; others may reveal missing
+guards or cross-method validation that the current analysis cannot summarize.
+
 ## Recommended project tests
 
 - Vary `AdoptablePet.name`, `breed`, `species`, and `location`; assert they are
@@ -190,7 +240,8 @@ intent. Raw facts still say "`caption` has an upper bound"; behavior facts say
 
 - Semantic flows are conservative and can include SDK/API-result
   over-approximations.
-- Literal result facts are not yet branch-local.
+- Literal result facts are not yet branch-local; control-dependence slices are
+  line-order candidates, not path-sensitive proofs.
 - Numeric facts cover direct integer literals and simple local integer
   assignments, not full arithmetic.
 - String-composition facts identify construction style and contributing fields,
@@ -200,3 +251,5 @@ intent. Raw facts still say "`caption` has an upper bound"; behavior facts say
 - Boundary behavior summaries are intentionally narrow. They currently cover
   upper-bound string caps through dataclass/local dependencies and simple helper
   truncation, not arbitrary platform API constraints.
+- Typestate/protocol findings are name-based event-order candidates and should
+  be validated against the concrete workflow.

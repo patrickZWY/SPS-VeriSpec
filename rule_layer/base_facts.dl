@@ -31,6 +31,15 @@
 .decl dataclass(module_name:symbol, class_name:symbol, is_frozen:number, line:number)
 .input dataclass
 
+.decl dataclass_option(
+  module_name:symbol,
+  class_name:symbol,
+  option_name:symbol,
+  option_value:symbol,
+  is_explicit:number
+)
+.input dataclass_option
+
 .decl dataclass_field(
   module_name:symbol,
   class_name:symbol,
@@ -157,6 +166,118 @@
 )
 .input attribute_write
 
+.decl local_alias(
+  module_name:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  target_name:symbol,
+  line:number
+)
+.input local_alias
+
+.decl loop_iterates(
+  module_name:symbol,
+  qualified_name:symbol,
+  target_name:symbol,
+  iter_expr:symbol,
+  line:number
+)
+.input loop_iterates
+
+.decl comprehension_iterates(
+  module_name:symbol,
+  qualified_name:symbol,
+  target_name:symbol,
+  iter_expr:symbol,
+  line:number
+)
+.input comprehension_iterates
+
+.decl comprehension_filter(
+  module_name:symbol,
+  qualified_name:symbol,
+  target_name:symbol,
+  filter_expr:symbol,
+  line:number
+)
+.input comprehension_filter
+
+.decl assertion(
+  module_name:symbol,
+  qualified_name:symbol,
+  test_expr:symbol,
+  line:number
+)
+.input assertion
+
+.decl branch_condition(
+  module_name:symbol,
+  qualified_name:symbol,
+  condition_expr:symbol,
+  line:number
+)
+.input branch_condition
+
+.decl condition_atom(
+  module_name:symbol,
+  qualified_name:symbol,
+  atom_expr:symbol,
+  atom_state:symbol,
+  line:number
+)
+.input condition_atom
+
+.decl with_resource(
+  module_name:symbol,
+  qualified_name:symbol,
+  context_expr:symbol,
+  optional_name:symbol,
+  line:number
+)
+.input with_resource
+
+.decl await_expr(
+  module_name:symbol,
+  qualified_name:symbol,
+  awaited_expr:symbol,
+  line:number
+)
+.input await_expr
+
+.decl yield_value(
+  module_name:symbol,
+  qualified_name:symbol,
+  value_expr:symbol,
+  line:number
+)
+.input yield_value
+
+.decl match_subject(
+  module_name:symbol,
+  qualified_name:symbol,
+  subject_expr:symbol,
+  line:number
+)
+.input match_subject
+
+.decl match_case(
+  module_name:symbol,
+  qualified_name:symbol,
+  pattern_kind:symbol,
+  guard_expr:symbol,
+  line:number
+)
+.input match_case
+
+.decl subscript_access(
+  module_name:symbol,
+  qualified_name:symbol,
+  owner_expr:symbol,
+  index_kind:symbol,
+  line:number
+)
+.input subscript_access
+
 .decl handles_exception(
   module_name:symbol,
   qualified_name:symbol,
@@ -181,6 +302,63 @@
 
 .decl calls(module_name:symbol, caller:symbol, callee:symbol, line:number)
 .input calls
+
+.decl call_protocol_event(
+  module_name:symbol,
+  qualified_name:symbol,
+  receiver_expr:symbol,
+  event_kind:symbol,
+  callee:symbol,
+  line:number
+)
+.input call_protocol_event
+
+.decl call_target(
+  module_name:symbol,
+  caller:symbol,
+  callee:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  call_kind:symbol,
+  line:number
+)
+.input call_target
+
+.decl call_argument(
+  module_name:symbol,
+  caller:symbol,
+  callee:symbol,
+  arg_position:number,
+  arg_name:symbol,
+  source_expr:symbol,
+  line:number
+)
+.input call_argument
+
+.decl return_call(
+  module_name:symbol,
+  qualified_name:symbol,
+  callee:symbol,
+  line:number
+)
+.input return_call
+
+.decl resolved_return_call(
+  module_name:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  line:number
+)
+.input resolved_return_call
+
+.decl return_local(
+  module_name:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  line:number
+)
+.input return_local
 
 .decl instantiates(module_name:symbol, caller:symbol, class_name:symbol, line:number)
 .input instantiates
@@ -276,6 +454,16 @@
   line:number
 )
 .input call_result_assigned
+
+.decl resolved_call_result_assigned(
+  module_name:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  line:number
+)
+.input resolved_call_result_assigned
 
 .decl local_dataclass_value(
   module_name:symbol,

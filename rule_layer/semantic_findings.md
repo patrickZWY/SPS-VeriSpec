@@ -5,9 +5,10 @@ This file describes the generic semantic layer implemented in
 
 The goal is to move beyond dataclass shape without becoming project-specific.
 The layer derives conservative semantic candidates from value flow, literal
-constructor arguments, string construction, numeric bounds, and boundary-level
-behavior summaries. These candidates are intended to drive concrete tests and
-review, not to prove full runtime correctness.
+constructor arguments, string construction, numeric bounds, boundary-level
+behavior summaries, interprocedural call summaries, program slices, small
+abstract states, and protocol-order events. These candidates are intended to
+drive concrete tests and review, not to prove full runtime correctness.
 
 ## Souffle program
 
@@ -41,6 +42,15 @@ python3 tools/run_souffle_models.py <python-project-dir> --work-dir /tmp/project
 - boundary behavior that associates generic bounds with dataclass inputs,
   primitive string returns, or helper returns
 - conflicting inclusive numeric-bound candidates
+- call-parameter bindings and callsite-aware interprocedural local field flow
+- observable output slices and backward output slices
+- function-local backward slices, external-call field slices, and
+  control-dependence slices
+- abstract value states for nullness, emptiness, string-length bounds, and
+  status/result literals
+- nullable optional-field use-before-guard candidates
+- typestate transitions and protocol-order candidates such as
+  validate/authenticate-before-publish and open-before-close
 
 ## Useful outputs
 
@@ -56,6 +66,19 @@ python3 tools/run_souffle_models.py <python-project-dir> --work-dir /tmp/project
 - `/tmp/project-semantic-out/boundary_behavior.csv`
 - `/tmp/project-semantic-out/helper_boundary_behavior.csv`
 - `/tmp/project-semantic-out/numeric_bound_conflict_candidate.csv`
+- `/tmp/project-semantic-out/call_parameter_binding.csv`
+- `/tmp/project-semantic-out/interprocedural_local_field_flow.csv`
+- `/tmp/project-semantic-out/interprocedural_method_transform.csv`
+- `/tmp/project-semantic-out/backward_output_slice.csv`
+- `/tmp/project-semantic-out/function_backward_slice.csv`
+- `/tmp/project-semantic-out/external_call_field_slice.csv`
+- `/tmp/project-semantic-out/control_dependence_slice.csv`
+- `/tmp/project-semantic-out/abstract_value_state.csv`
+- `/tmp/project-semantic-out/abstract_numeric_state.csv`
+- `/tmp/project-semantic-out/nullable_use_before_guard_candidate.csv`
+- `/tmp/project-semantic-out/typestate_transition.csv`
+- `/tmp/project-semantic-out/protocol_obligation_candidate.csv`
+- `/tmp/project-semantic-out/typestate_protocol_violation.csv`
 
 ## Example output shape
 
@@ -97,6 +120,27 @@ for example, a local caption slice can become `Post.text -> str.<return>` with
 `max_length`, while a private cleanup helper can become `description -> return`
 with `truncate_or_include`.
 
+External-call field slice:
+
+```text
+<function_module> <qualified_name> <callee> <argument_expr> <source_module> <source_class> <source_field> <line>
+```
+
+This relation says a dataclass field influences an argument passed to a call
+site. It is useful for review and mutation targeting around logs, SDK calls,
+HTTP calls, and publishing APIs.
+
+Protocol obligation candidate:
+
+```text
+<function_module> <qualified_name> <receiver_expr> <obligation> <event_line> <reason>
+```
+
+This relation flags order-sensitive workflows such as a publish-like call that
+does not have an obvious earlier validate/authenticate-like event in the same
+function. It is intentionally heuristic and should be treated as a review
+candidate.
+
 ## Why this matters
 
 The earlier layers can say that one dataclass transforms into another. The
@@ -104,7 +148,10 @@ semantic layer can say which required input fields are observable, which fields
 appear dropped, which status fields are set with explicit literals, and which
 numeric boundaries deserve tests. The boundary-behavior relations add one more
 level: they associate a generic bound with the input and output surface that a
-test should exercise.
+test should exercise. The slicing, abstract-state, and protocol relations add
+the next review layer: they explain which fields influence external calls or
+guards, which optional fields are used without an obvious guard, and where
+order-sensitive API usage may need a test or review.
 
 That gives a better bridge from analysis to executable tests:
 
@@ -113,18 +160,26 @@ That gives a better bridge from analysis to executable tests:
 - select stronger platform-specific boundary tests from behavior summaries
 - test success/failure result constructors from observed boolean literals
 - review lossy required-field candidates before deciding whether they are bugs
+- review optional field reads that lack obvious prior guards or validation
+- inspect field slices into external calls and protocol-sensitive operations
+- test or review publish-like workflows for explicit validation/authentication
 
 ## Current limitations
 
 - The analysis is syntactic and conservative.
 - Field identity is still partly name-based.
-- Branch-local semantics are not modeled yet, so a literal constructor value is
-  not necessarily tied to a specific condition.
+- Branch-local semantics are approximated with line-order control-dependence
+  slices, not a full CFG/path-sensitive model.
 - Numeric reasoning currently tracks direct integer literals and simple local
   integer assignments, not arbitrary arithmetic.
 - String semantics detect construction style and field influence, not exact
   rendered string content.
-- Call-boundary influence is intentionally conservative and can over-approximate.
+- Call-boundary influence is intentionally conservative and can over-approximate,
+  especially for callbacks, dynamic dispatch, and generic containers.
 - Boundary behavior is a summary layer over syntactic facts; it is intentionally
   narrow and currently handles direct/local dataclass string caps and simple
   helper-return truncation.
+- Abstract interpretation is a small candidate layer, not a full lattice
+  fixpoint over CFG states.
+- Typestate/protocol analysis uses name-based event classification and line
+  ordering, so findings should be validated before being treated as bugs.

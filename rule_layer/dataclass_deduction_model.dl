@@ -85,6 +85,59 @@
 .decl effectful_dataclass(dataclass_module:symbol, class_name:symbol, effect_kind:symbol)
 .output effectful_dataclass
 
+.decl function_call_edge(
+  caller_module:symbol,
+  caller_qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  line:number
+)
+.output function_call_edge
+
+.decl reachable_function_call(
+  caller_module:symbol,
+  caller_qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol
+)
+.output reachable_function_call
+
+.decl interprocedural_function_dataclass(
+  function_module:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  dataclass_module:symbol,
+  class_name:symbol,
+  relation_kind:symbol,
+  evidence:symbol
+)
+.output interprocedural_function_dataclass
+
+.decl interprocedural_field_use_in_function(
+  function_module:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  dataclass_module:symbol,
+  class_name:symbol,
+  field_name:symbol,
+  access_kind:symbol
+)
+.output interprocedural_field_use_in_function
+
+.decl interprocedural_dataclass_transform(
+  function_module:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  target_module:symbol,
+  target_class:symbol
+)
+.output interprocedural_dataclass_transform
+
 function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, "param_type", ParamName) :-
   resolved_param_type_ref(FunctionModule, QualifiedName, ParamName, DataclassModule, Class),
   dataclass(DataclassModule, Class, _, _).
@@ -198,3 +251,28 @@ effectful_dataclass(DataclassModule, Class, "handles_exception") :-
 effectful_dataclass(DataclassModule, Class, "raises_exception") :-
   function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, _, _),
   raises_exception(FunctionModule, QualifiedName, _, _).
+
+function_call_edge(CM, CQ, TM, TQ, Line) :-
+  call_target(CM, CQ, _, TM, TQ, _, Line).
+
+reachable_function_call(CM, CQ, TM, TQ) :-
+  function_call_edge(CM, CQ, TM, TQ, _).
+
+reachable_function_call(CM, CQ, TM, TQ) :-
+  function_call_edge(CM, CQ, MidModule, MidQ, _),
+  reachable_function_call(MidModule, MidQ, TM, TQ).
+
+interprocedural_function_dataclass(FunctionModule, QualifiedName, CalleeModule, CalleeQ, DataclassModule, Class, RelationKind, Evidence) :-
+  function_dataclass(FunctionModule, QualifiedName, _, _, _, _),
+  reachable_function_call(FunctionModule, QualifiedName, CalleeModule, CalleeQ),
+  function_dataclass(CalleeModule, CalleeQ, DataclassModule, Class, RelationKind, Evidence).
+
+interprocedural_field_use_in_function(FunctionModule, QualifiedName, CalleeModule, CalleeQ, DataclassModule, Class, FieldName, AccessKind) :-
+  function_dataclass(FunctionModule, QualifiedName, _, _, _, _),
+  reachable_function_call(FunctionModule, QualifiedName, CalleeModule, CalleeQ),
+  field_use_in_function(CalleeModule, CalleeQ, DataclassModule, Class, FieldName, AccessKind, _).
+
+interprocedural_dataclass_transform(FunctionModule, QualifiedName, CalleeModule, CalleeQ, SourceModule, SourceClass, TargetModule, TargetClass) :-
+  function_dataclass(FunctionModule, QualifiedName, _, _, _, _),
+  reachable_function_call(FunctionModule, QualifiedName, CalleeModule, CalleeQ),
+  dataclass_transform(CalleeModule, CalleeQ, SourceModule, SourceClass, TargetModule, TargetClass).

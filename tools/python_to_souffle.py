@@ -6,10 +6,23 @@ import json
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 
 EXCLUDED_DIRS = {"__pycache__", ".git", ".venv", "venv", "tests", "manual_testing"}
+
+DATACLASS_OPTION_DEFAULTS: dict[str, str] = {
+    "init": "true",
+    "repr": "true",
+    "eq": "true",
+    "order": "false",
+    "unsafe_hash": "false",
+    "frozen": "false",
+    "match_args": "true",
+    "kw_only": "false",
+    "slots": "false",
+    "weakref_slot": "false",
+}
 
 SOUFFLE_SCHEMA: dict[str, tuple[str, ...]] = {
     "module": ("symbol",),
@@ -20,6 +33,7 @@ SOUFFLE_SCHEMA: dict[str, tuple[str, ...]] = {
     "extends": ("symbol", "symbol", "symbol"),
     "resolved_extends": ("symbol", "symbol", "symbol", "symbol"),
     "dataclass": ("symbol", "symbol", "number", "number"),
+    "dataclass_option": ("symbol", "symbol", "symbol", "symbol", "number"),
     "dataclass_field": (
         "symbol",
         "symbol",
@@ -57,11 +71,53 @@ SOUFFLE_SCHEMA: dict[str, tuple[str, ...]] = {
     ),
     "attribute_read": ("symbol", "symbol", "symbol", "symbol", "number"),
     "attribute_write": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "local_alias": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "loop_iterates": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "comprehension_iterates": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "comprehension_filter": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "assertion": ("symbol", "symbol", "symbol", "number"),
+    "branch_condition": ("symbol", "symbol", "symbol", "number"),
+    "condition_atom": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "with_resource": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "await_expr": ("symbol", "symbol", "symbol", "number"),
+    "yield_value": ("symbol", "symbol", "symbol", "number"),
+    "match_subject": ("symbol", "symbol", "symbol", "number"),
+    "match_case": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "subscript_access": ("symbol", "symbol", "symbol", "symbol", "number"),
     "handles_exception": ("symbol", "symbol", "symbol", "number"),
     "raises_exception": ("symbol", "symbol", "symbol", "number"),
     "defines_function": ("symbol", "symbol", "number"),
     "function_name": ("symbol", "symbol", "symbol"),
     "calls": ("symbol", "symbol", "symbol", "number"),
+    "call_protocol_event": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
+    "call_target": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
+    "call_argument": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+        "symbol",
+        "symbol",
+        "number",
+    ),
+    "return_call": ("symbol", "symbol", "symbol", "number"),
+    "resolved_return_call": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "return_local": ("symbol", "symbol", "symbol", "number"),
     "instantiates": ("symbol", "symbol", "symbol", "number"),
     "resolved_instantiates": ("symbol", "symbol", "symbol", "symbol", "number"),
     "reads_env_var": ("symbol", "symbol", "symbol", "number"),
@@ -96,6 +152,14 @@ SOUFFLE_SCHEMA: dict[str, tuple[str, ...]] = {
         "number",
     ),
     "call_result_assigned": ("symbol", "symbol", "symbol", "symbol", "number"),
+    "resolved_call_result_assigned": (
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "symbol",
+        "number",
+    ),
     "local_dataclass_value": ("symbol", "symbol", "symbol", "symbol", "number"),
     "resolved_local_dataclass_value": (
         "symbol",
@@ -204,6 +268,7 @@ class PythonFactExtractor(ast.NodeVisitor):
         self._local_field_deps_stack: list[dict[str, set[tuple[str, str]]]] = []
         self._local_dataclass_values_stack: list[dict[str, str]] = []
         self._local_numeric_values_stack: list[dict[str, int]] = []
+        self._local_alias_stack: list[dict[str, str]] = []
 
     def extract(self, tree: ast.AST, relative_path: str) -> list[Fact]:
         self.facts.add(Fact("module", (self.module_name,)))
@@ -249,11 +314,25 @@ class PythonFactExtractor(ast.NodeVisitor):
                     Fact("extends", (self.module_name, class_name, rendered_base))
                 )
 
-        is_dataclass, is_frozen = self._extract_dataclass_metadata(node)
+        is_dataclass, dataclass_options = self._extract_dataclass_metadata(node)
         if is_dataclass:
+            is_frozen = 1 if dataclass_options["frozen"][0] == "true" else 0
             self.facts.add(
                 Fact("dataclass", (self.module_name, class_name, is_frozen, node.lineno))
             )
+            for option_name, (option_value, is_explicit) in dataclass_options.items():
+                self.facts.add(
+                    Fact(
+                        "dataclass_option",
+                        (
+                            self.module_name,
+                            class_name,
+                            option_name,
+                            option_value,
+                            is_explicit,
+                        ),
+                    )
+                )
             for position, field_node in enumerate(
                 self._iter_dataclass_fields(node), start=1
             ):
@@ -338,6 +417,8 @@ class PythonFactExtractor(ast.NodeVisitor):
         callee = self._render_expr(node.func)
         if callee:
             self.facts.add(Fact("calls", (self.module_name, caller, callee, node.lineno)))
+            self._add_call_protocol_event_facts(caller, callee, node.lineno)
+            self._add_call_argument_facts(caller, callee, node)
             class_name = self._class_like_name(callee)
             if class_name:
                 self.facts.add(
@@ -412,6 +493,19 @@ class PythonFactExtractor(ast.NodeVisitor):
     def visit_Subscript(self, node: ast.Subscript) -> None:
         caller = self._current_callable()
         target = self._render_expr(node.value)
+        if target:
+            self.facts.add(
+                Fact(
+                    "subscript_access",
+                    (
+                        self.module_name,
+                        caller,
+                        self._resolve_local_alias(target),
+                        self._subscript_index_kind(node.slice),
+                        node.lineno,
+                    ),
+                )
+            )
         upper_bound = self._slice_upper_bound(node.slice)
         if target and upper_bound is not None:
             self.facts.add(
@@ -420,6 +514,103 @@ class PythonFactExtractor(ast.NodeVisitor):
                     (self.module_name, caller, target, upper_bound, node.lineno),
                 )
             )
+        self.generic_visit(node)
+
+    def visit_For(self, node: ast.For) -> None:
+        self._record_loop_iterates(node.target, node.iter, node.lineno)
+        self.generic_visit(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self._record_loop_iterates(node.target, node.iter, node.lineno)
+        self.generic_visit(node)
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        self._record_comprehension(node)
+        self.generic_visit(node)
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        self._record_comprehension(node)
+        self.generic_visit(node)
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        self._record_comprehension(node)
+        self.generic_visit(node)
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        self._record_comprehension(node)
+        self.generic_visit(node)
+
+    def visit_Assert(self, node: ast.Assert) -> None:
+        caller = self._current_callable()
+        self.facts.add(
+            Fact(
+                "assertion",
+                (self.module_name, caller, self._expression_repr(node.test), node.lineno),
+            )
+        )
+        self._add_condition_read_facts(node.test)
+        self.generic_visit(node)
+
+    def visit_With(self, node: ast.With) -> None:
+        self._record_with_resources(node.items, node.lineno)
+        self.generic_visit(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self._record_with_resources(node.items, node.lineno)
+        self.generic_visit(node)
+
+    def visit_Await(self, node: ast.Await) -> None:
+        self.facts.add(
+            Fact(
+                "await_expr",
+                (
+                    self.module_name,
+                    self._current_callable(),
+                    self._expression_repr(node.value),
+                    node.lineno,
+                ),
+            )
+        )
+        self.generic_visit(node)
+
+    def visit_Yield(self, node: ast.Yield) -> None:
+        self._record_yield(node.value, node.lineno)
+        self.generic_visit(node)
+
+    def visit_YieldFrom(self, node: ast.YieldFrom) -> None:
+        self._record_yield(node.value, node.lineno)
+        self.generic_visit(node)
+
+    def visit_Match(self, node: ast.Match) -> None:
+        caller = self._current_callable()
+        self.facts.add(
+            Fact(
+                "match_subject",
+                (
+                    self.module_name,
+                    caller,
+                    self._resolve_aliases_in_expr(self._expression_repr(node.subject)),
+                    node.lineno,
+                ),
+            )
+        )
+        for case in node.cases:
+            guard = self._expression_repr(case.guard) if case.guard is not None else ""
+            guard = self._resolve_aliases_in_expr(guard) if guard else ""
+            self.facts.add(
+                Fact(
+                    "match_case",
+                    (
+                        self.module_name,
+                        caller,
+                        self._pattern_kind(case.pattern),
+                        guard,
+                        case.pattern.lineno,
+                    ),
+                )
+            )
+            if case.guard is not None:
+                self._add_condition_read_facts(case.guard)
         self.generic_visit(node)
 
     def _visit_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
@@ -510,7 +701,9 @@ class PythonFactExtractor(ast.NodeVisitor):
         self._local_field_deps_stack.append({})
         self._local_dataclass_values_stack.append({})
         self._local_numeric_values_stack.append({})
+        self._local_alias_stack.append({})
         self.generic_visit(node)
+        self._local_alias_stack.pop()
         self._local_numeric_values_stack.pop()
         self._local_dataclass_values_stack.pop()
         self._local_field_deps_stack.pop()
@@ -550,6 +743,7 @@ class PythonFactExtractor(ast.NodeVisitor):
         owner = self._render_expr(node.value)
         caller = self._current_callable()
         if owner:
+            owner = self._resolve_local_alias(owner)
             if isinstance(node.ctx, ast.Load):
                 self.facts.add(
                     Fact(
@@ -577,6 +771,19 @@ class PythonFactExtractor(ast.NodeVisitor):
     def visit_Return(self, node: ast.Return) -> None:
         caller = self._current_callable()
         if node.value is not None:
+            if isinstance(node.value, ast.Call):
+                callee = self._render_expr(node.value.func)
+                if callee:
+                    self.facts.add(
+                        Fact("return_call", (self.module_name, caller, callee, node.lineno))
+                    )
+            elif isinstance(node.value, ast.Name):
+                self.facts.add(
+                    Fact(
+                        "return_local",
+                        (self.module_name, caller, node.value.id, node.lineno),
+                    )
+                )
             class_name = self._returned_class_name(node.value)
             if class_name:
                 self.facts.add(
@@ -608,14 +815,17 @@ class PythonFactExtractor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_If(self, node: ast.If) -> None:
+        self._record_branch_condition(node.test, node.lineno)
         self._add_condition_read_facts(node.test)
         self.generic_visit(node)
 
     def visit_IfExp(self, node: ast.IfExp) -> None:
+        self._record_branch_condition(node.test, node.lineno)
         self._add_condition_read_facts(node.test)
         self.generic_visit(node)
 
     def visit_While(self, node: ast.While) -> None:
+        self._record_branch_condition(node.test, node.lineno)
         self._add_condition_read_facts(node.test)
         self.generic_visit(node)
 
@@ -676,24 +886,34 @@ class PythonFactExtractor(ast.NodeVisitor):
             return first_arg.value
         return None
 
-    def _extract_dataclass_metadata(self, node: ast.ClassDef) -> tuple[bool, int]:
+    def _extract_dataclass_metadata(
+        self, node: ast.ClassDef
+    ) -> tuple[bool, dict[str, tuple[str, int]]]:
         for decorator in node.decorator_list:
             callee = decorator
-            frozen = 0
+            options = {
+                name: (default_value, 0)
+                for name, default_value in DATACLASS_OPTION_DEFAULTS.items()
+            }
             if isinstance(decorator, ast.Call):
                 callee = decorator.func
                 for keyword in decorator.keywords:
-                    if keyword.arg == "frozen" and self._is_truthy_literal(keyword.value):
-                        frozen = 1
+                    if keyword.arg in DATACLASS_OPTION_DEFAULTS:
+                        options[keyword.arg] = (
+                            self._dataclass_option_value(keyword.value),
+                            1,
+                        )
 
             rendered = self._render_expr(callee)
             if rendered and rendered.split(".")[-1] == "dataclass":
-                return True, frozen
-        return False, 0
+                return True, options
+        return False, {}
 
-    @staticmethod
-    def _is_truthy_literal(node: ast.AST) -> bool:
-        return isinstance(node, ast.Constant) and bool(node.value)
+    def _dataclass_option_value(self, node: ast.AST) -> str:
+        if isinstance(node, ast.Constant) and isinstance(node.value, bool):
+            return "true" if node.value else "false"
+        rendered = self._render_expr(node)
+        return rendered or "<unknown>"
 
     def _iter_dataclass_fields(
         self, node: ast.ClassDef
@@ -888,8 +1108,64 @@ class PythonFactExtractor(ast.NodeVisitor):
                             keyword.arg,
                             keyword.value.lineno,
                         ),
+                        )
                     )
+
+    def _add_call_argument_facts(
+        self,
+        caller: str,
+        callee: str,
+        node: ast.Call,
+    ) -> None:
+        for position, argument in enumerate(node.args, start=1):
+            self.facts.add(
+                Fact(
+                    "call_argument",
+                    (
+                        self.module_name,
+                        caller,
+                        callee,
+                        position,
+                        "",
+                        self._expression_repr(argument),
+                        argument.lineno,
+                    ),
                 )
+            )
+        for keyword in node.keywords:
+            if keyword.arg is None:
+                continue
+            self.facts.add(
+                Fact(
+                    "call_argument",
+                    (
+                        self.module_name,
+                        caller,
+                        callee,
+                        0,
+                        keyword.arg,
+                        self._expression_repr(keyword.value),
+                        keyword.value.lineno,
+                    ),
+                )
+            )
+
+    def _add_call_protocol_event_facts(
+        self,
+        caller: str,
+        callee: str,
+        line: int,
+    ) -> None:
+        event_kind = self._call_protocol_event_kind(callee)
+        if event_kind is None:
+            return
+        receiver = callee.rsplit(".", 1)[0] if "." in callee else ""
+        self.facts.add(
+            Fact(
+                "call_protocol_event",
+                (self.module_name, caller, receiver, event_kind, callee, line),
+            )
+        )
 
     def _add_return_constructor_kwarg_facts(
         self,
@@ -970,9 +1246,87 @@ class PythonFactExtractor(ast.NodeVisitor):
                 self.facts.add(
                     Fact(
                         "condition_reads_attribute",
-                        (self.module_name, caller, owner, child.attr, child.lineno),
+                        (
+                            self.module_name,
+                            caller,
+                            self._resolve_local_alias(owner),
+                            child.attr,
+                            child.lineno,
+                        ),
+                        )
                     )
+
+    def _record_branch_condition(self, node: ast.AST, line: int) -> None:
+        caller = self._current_callable()
+        expression = self._resolve_aliases_in_expr(self._expression_repr(node))
+        self.facts.add(
+            Fact("branch_condition", (self.module_name, caller, expression, line))
+        )
+        for atom, state in sorted(self._condition_atoms(node)):
+            self.facts.add(
+                Fact(
+                    "condition_atom",
+                    (
+                        self.module_name,
+                        caller,
+                        self._resolve_aliases_in_expr(atom),
+                        state,
+                        line,
+                    ),
                 )
+            )
+
+    def _condition_atoms(self, node: ast.AST, polarity: bool = True) -> set[tuple[str, str]]:
+        atoms: set[tuple[str, str]] = set()
+        match node:
+            case ast.BoolOp(values=values):
+                for value in values:
+                    atoms.update(self._condition_atoms(value, polarity))
+            case ast.UnaryOp(op=ast.Not(), operand=operand):
+                atoms.update(self._condition_atoms(operand, not polarity))
+            case ast.Compare(left=left, ops=ops, comparators=comparators):
+                left_expr = self._render_expr(left)
+                if left_expr:
+                    for op, comparator in zip(ops, comparators):
+                        if self._is_none_literal(comparator):
+                            if isinstance(op, ast.Is):
+                                atoms.add((left_expr, "is_none" if polarity else "non_null"))
+                            elif isinstance(op, (ast.IsNot, ast.NotEq)):
+                                atoms.add((left_expr, "non_null" if polarity else "is_none"))
+                            elif isinstance(op, ast.Eq):
+                                atoms.add((left_expr, "is_none" if polarity else "non_null"))
+            case ast.Name() | ast.Attribute():
+                rendered = self._render_expr(node)
+                if rendered:
+                    atoms.add((rendered, "truthy" if polarity else "falsy"))
+            case ast.Call():
+                rendered = self._expression_repr(node)
+                atoms.add((rendered, "truthy" if polarity else "falsy"))
+            case _:
+                rendered = self._render_expr(node)
+                if rendered:
+                    atoms.add((rendered, "truthy" if polarity else "falsy"))
+        return atoms
+
+    @staticmethod
+    def _call_protocol_event_kind(callee: str) -> str | None:
+        name = callee.rsplit(".", 1)[-1]
+        if name[:1].isupper():
+            return None
+        normalized = name.lower().lstrip("_")
+        if normalized in {"authenticate", "login", "connect", "account_verify_credentials"}:
+            return "authenticate"
+        if normalized.startswith(("validate", "ensure", "check")):
+            return "validate"
+        if normalized in {"publish", "send", "upload", "status_post", "media_post"}:
+            return "publish"
+        if normalized.endswith("_publish"):
+            return "publish"
+        if normalized in {"open", "acquire", "start"}:
+            return "open"
+        if normalized in {"close", "release", "stop", "logout"}:
+            return "close"
+        return None
 
     def _expression_repr(self, node: ast.AST) -> str:
         try:
@@ -1005,10 +1359,26 @@ class PythonFactExtractor(ast.NodeVisitor):
         callee_name = callee.split(".")[-1] if callee else None
         literal = self._literal_value(value)
         numeric_literal = self._numeric_literal(value)
+        alias_target = self._alias_target(value)
         self._add_expression_numeric_facts(caller, value)
 
         for target in targets:
             for local_name in self._iter_assignment_target_names(target):
+                if alias_target and alias_target != local_name:
+                    resolved_alias = self._resolve_local_alias(alias_target)
+                    self._set_local_alias(local_name, resolved_alias)
+                    self.facts.add(
+                        Fact(
+                            "local_alias",
+                            (
+                                self.module_name,
+                                caller,
+                                local_name,
+                                resolved_alias,
+                                line,
+                            ),
+                        )
+                    )
                 if literal:
                     literal_kind, literal_value = literal
                     self.facts.add(
@@ -1097,17 +1467,146 @@ class PythonFactExtractor(ast.NodeVisitor):
             for element in node.elts:
                 yield from self._iter_assignment_target_names(element)
 
+    def _record_loop_iterates(
+        self,
+        target: ast.AST,
+        iterator: ast.AST,
+        line: int,
+    ) -> None:
+        caller = self._current_callable()
+        iter_expr = self._expression_repr(iterator)
+        for target_name in self._iter_assignment_target_names(target):
+            self.facts.add(
+                Fact(
+                    "loop_iterates",
+                    (
+                        self.module_name,
+                        caller,
+                        target_name,
+                        self._resolve_aliases_in_expr(iter_expr),
+                        line,
+                    ),
+                )
+            )
+
+    def _record_comprehension(
+        self,
+        node: ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp,
+    ) -> None:
+        caller = self._current_callable()
+        for generator in node.generators:
+            iter_expr = self._resolve_aliases_in_expr(self._expression_repr(generator.iter))
+            for target_name in self._iter_assignment_target_names(generator.target):
+                self.facts.add(
+                    Fact(
+                        "comprehension_iterates",
+                        (
+                            self.module_name,
+                            caller,
+                            target_name,
+                            iter_expr,
+                            generator.iter.lineno,
+                        ),
+                    )
+                )
+                for condition in generator.ifs:
+                    self.facts.add(
+                        Fact(
+                            "comprehension_filter",
+                            (
+                                self.module_name,
+                                caller,
+                                target_name,
+                                self._resolve_aliases_in_expr(
+                                    self._expression_repr(condition)
+                                ),
+                                condition.lineno,
+                            ),
+                        )
+                    )
+                    self._add_condition_read_facts(condition)
+
+    def _record_with_resources(self, items: list[ast.withitem], line: int) -> None:
+        caller = self._current_callable()
+        for item in items:
+            optional_name = ""
+            if item.optional_vars is not None:
+                optional_name = ",".join(self._iter_assignment_target_names(item.optional_vars))
+            self.facts.add(
+                Fact(
+                    "with_resource",
+                    (
+                        self.module_name,
+                        caller,
+                        self._expression_repr(item.context_expr),
+                        optional_name,
+                        line,
+                    ),
+                )
+            )
+
+    def _record_yield(self, value: ast.AST | None, line: int) -> None:
+        self.facts.add(
+            Fact(
+                "yield_value",
+                (
+                    self.module_name,
+                    self._current_callable(),
+                    self._expression_repr(value) if value is not None else "",
+                    line,
+                ),
+            )
+        )
+
+    def _alias_target(self, node: ast.AST) -> str | None:
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            return self._expression_repr(node)
+        return None
+
+    def _resolve_aliases_in_expr(self, expression: str) -> str:
+        parts = expression.split(".", 1)
+        resolved = self._resolve_local_alias(parts[0])
+        return ".".join([resolved, parts[1]]) if len(parts) == 2 else resolved
+
+    def _field_dep_from_alias(self, alias_target: str) -> set[tuple[str, str]]:
+        owner, separator, field_name = alias_target.partition(".")
+        if separator and owner and field_name and "." not in field_name:
+            return {(owner, field_name)}
+        return set()
+
+    def _subscript_index_kind(self, node: ast.AST) -> str:
+        if isinstance(node, ast.Slice):
+            return "slice"
+        if isinstance(node, ast.Constant):
+            return type(node.value).__name__
+        if isinstance(node, ast.Name):
+            return "name"
+        return type(node).__name__
+
+    def _pattern_kind(self, node: ast.pattern) -> str:
+        name = type(node).__name__
+        if isinstance(node, ast.MatchClass):
+            class_name = self._render_expr(node.cls)
+            return f"{name}:{class_name}" if class_name else name
+        return name
+
     def _expression_field_deps(self, node: ast.AST) -> set[tuple[str, str]]:
         deps: set[tuple[str, str]] = set()
         if isinstance(node, ast.Name):
-            deps.update(self._get_local_field_deps(node.id))
+            local_name = self._resolve_local_alias(node.id)
+            deps.update(self._field_dep_from_alias(local_name))
+            deps.update(self._get_local_field_deps(local_name))
             return deps
 
         for child in ast.walk(node):
             if isinstance(child, ast.Attribute) and isinstance(child.value, ast.Name):
-                deps.add((child.value.id, child.attr))
+                deps.add((self._resolve_local_alias(child.value.id), child.attr))
             elif isinstance(child, ast.Name):
-                deps.update(self._get_local_field_deps(child.id))
+                local_name = self._resolve_local_alias(child.id)
+                deps.update(self._field_dep_from_alias(local_name))
+                deps.update(self._get_local_field_deps(local_name))
         return deps
 
     def _get_local_field_deps(self, local_name: str) -> set[tuple[str, str]]:
@@ -1135,6 +1634,21 @@ class PythonFactExtractor(ast.NodeVisitor):
     def _set_numeric_assignment(self, local_name: str, value: int) -> None:
         if self._local_numeric_values_stack:
             self._local_numeric_values_stack[-1][local_name] = value
+
+    def _set_local_alias(self, local_name: str, target_name: str) -> None:
+        if self._local_alias_stack:
+            self._local_alias_stack[-1][local_name] = target_name
+
+    def _resolve_local_alias(self, name: str) -> str:
+        if not self._local_alias_stack:
+            return name
+        seen: set[str] = set()
+        current = name
+        aliases = self._local_alias_stack[-1]
+        while current in aliases and current not in seen:
+            seen.add(current)
+            current = aliases[current]
+        return current
 
     @staticmethod
     def _is_none_literal(node: ast.AST) -> bool:
@@ -1297,6 +1811,12 @@ def resolve_facts(facts: Iterable[Fact]) -> list[Fact]:
         for fact in resolved
         if fact.predicate == "module"
     }
+    function_defs = {
+        (str(module_name), str(qualified_name))
+        for fact in resolved
+        if fact.predicate == "defines_function"
+        for module_name, qualified_name, _ in [fact.args]
+    }
     aliases: dict[str, dict[str, str]] = defaultdict(dict)
 
     for fact in resolved:
@@ -1307,6 +1827,28 @@ def resolve_facts(facts: Iterable[Fact]) -> list[Fact]:
     class_name_to_defs: dict[str, set[str]] = defaultdict(set)
     for module_name, class_name in class_defs:
         class_name_to_defs[class_name].add(module_name)
+
+    function_name_to_defs: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    function_names: dict[tuple[str, str], str] = {}
+    for fact in resolved:
+        if fact.predicate != "function_name":
+            continue
+        module_name, qualified_name, name = fact.args
+        key = (str(module_name), str(qualified_name))
+        function_names[key] = str(name)
+        function_name_to_defs[str(name)].add(key)
+
+    method_by_class: dict[tuple[str, str, str], str] = {}
+    caller_class: dict[tuple[str, str], str] = {}
+    for fact in resolved:
+        if fact.predicate != "method_of_class":
+            continue
+        module_name, class_name, qualified_name = fact.args
+        method_name = str(qualified_name).split(".")[-1]
+        method_by_class[(str(module_name), str(class_name), method_name)] = str(
+            qualified_name
+        )
+        caller_class[(str(module_name), str(qualified_name))] = str(class_name)
 
     def split_resolved_name(
         module_name: str,
@@ -1412,6 +1954,141 @@ def resolve_facts(facts: Iterable[Fact]) -> list[Fact]:
             case _:
                 pass
 
+    resolved_param_types = {
+        (
+            str(module_name),
+            str(qualified_name),
+            str(param_name),
+        ): (str(type_module), str(type_name))
+        for fact in resolved
+        if fact.predicate == "resolved_param_type_ref"
+        for (
+            module_name,
+            qualified_name,
+            param_name,
+            type_module,
+            type_name,
+        ) in [fact.args]
+    }
+    resolved_local_value_types = {
+        (
+            str(module_name),
+            str(qualified_name),
+            str(local_name),
+        ): (str(type_module), str(type_name))
+        for fact in resolved
+        if fact.predicate == "resolved_local_dataclass_value"
+        for (
+            module_name,
+            qualified_name,
+            local_name,
+            type_module,
+            type_name,
+            _,
+        ) in [fact.args]
+    }
+
+    call_targets: dict[tuple[str, str, str, int], tuple[str, str, str]] = {}
+    for fact in list(resolved):
+        if fact.predicate != "calls":
+            continue
+        module_name, qualified_name, callee_name, line = fact.args
+        call_target = _resolve_call_target(
+            str(module_name),
+            str(qualified_name),
+            str(callee_name),
+            aliases,
+            modules,
+            function_defs,
+            function_name_to_defs,
+            split_resolved_name,
+            resolved_param_types,
+            resolved_local_value_types,
+            caller_class,
+            method_by_class,
+        )
+        if call_target is None:
+            continue
+        callee_module, callee_qualified_name, call_kind = call_target
+        call_targets[
+            (str(module_name), str(qualified_name), str(callee_name), int(line))
+        ] = call_target
+        resolved.add(
+            Fact(
+                "call_target",
+                (
+                    str(module_name),
+                    str(qualified_name),
+                    str(callee_name),
+                    callee_module,
+                    callee_qualified_name,
+                    call_kind,
+                    int(line),
+                ),
+            )
+        )
+
+    for fact in list(resolved):
+        match fact:
+            case Fact("return_call", (module_name, qualified_name, callee_name, line)):
+                call_target = call_targets.get(
+                    (
+                        str(module_name),
+                        str(qualified_name),
+                        str(callee_name),
+                        int(line),
+                    )
+                )
+                if call_target:
+                    resolved.add(
+                        Fact(
+                            "resolved_return_call",
+                            (
+                                str(module_name),
+                                str(qualified_name),
+                                call_target[0],
+                                call_target[1],
+                                int(line),
+                            ),
+                        )
+                    )
+            case Fact(
+                "call_result_assigned",
+                (module_name, qualified_name, local_name, callee_name, line),
+            ):
+                for (
+                    caller_module,
+                    caller_qualified_name,
+                    raw_callee_name,
+                    call_line,
+                ), call_target in call_targets.items():
+                    if (
+                        caller_module != str(module_name)
+                        or caller_qualified_name != str(qualified_name)
+                        or call_line != int(line)
+                    ):
+                        continue
+                    target_function_name = function_names.get(
+                        (call_target[0], call_target[1]), ""
+                    )
+                    if target_function_name != str(callee_name):
+                        continue
+                    resolved.add(
+                        Fact(
+                            "resolved_call_result_assigned",
+                            (
+                                str(module_name),
+                                str(qualified_name),
+                                str(local_name),
+                                call_target[0],
+                                call_target[1],
+                                int(line),
+                            ),
+                        )
+                    )
+            case _:
+                pass
+
     return sorted(resolved)
 
 
@@ -1466,6 +2143,101 @@ def _split_known_class(
             return module_name, parts[index]
     if len(parts) == 1 and ("", parts[0]) in class_defs:
         return "", parts[0]
+    return None
+
+
+def _resolve_call_target(
+    module_name: str,
+    qualified_name: str,
+    callee_name: str,
+    aliases: dict[str, dict[str, str]],
+    modules: set[str],
+    function_defs: set[tuple[str, str]],
+    function_name_to_defs: dict[str, set[tuple[str, str]]],
+    split_resolved_name: Callable[[str, str], tuple[str, str] | None],
+    resolved_param_types: dict[tuple[str, str, str], tuple[str, str]],
+    resolved_local_value_types: dict[tuple[str, str, str], tuple[str, str]],
+    caller_class: dict[tuple[str, str], str],
+    method_by_class: dict[tuple[str, str, str], str],
+) -> tuple[str, str, str] | None:
+    parts = callee_name.split(".")
+    if len(parts) >= 2:
+        receiver = parts[0]
+        method_name = parts[-1]
+
+        if receiver == "self":
+            class_name = caller_class.get((module_name, qualified_name))
+            if class_name is not None:
+                target = method_by_class.get((module_name, class_name, method_name))
+                if target:
+                    return module_name, target, "bound_method"
+
+        receiver_type = resolved_param_types.get((module_name, qualified_name, receiver))
+        if receiver_type is None:
+            receiver_type = resolved_local_value_types.get(
+                (module_name, qualified_name, receiver)
+            )
+        if receiver_type is not None:
+            receiver_module, receiver_class = receiver_type
+            target = method_by_class.get((receiver_module, receiver_class, method_name))
+            if target:
+                return receiver_module, target, "bound_method"
+
+        class_ref = ".".join(parts[:-1])
+        resolved_class = split_resolved_name(module_name, class_ref)
+        if resolved_class is not None:
+            class_module, class_name = resolved_class
+            target = method_by_class.get((class_module, class_name, method_name))
+            if target:
+                return class_module, target, "function"
+
+        for candidate in _resolution_candidates(
+            module_name,
+            callee_name,
+            aliases,
+            modules,
+        ):
+            target = _split_known_function(candidate, function_defs, modules)
+            if target is not None:
+                return target[0], target[1], "function"
+
+    if (module_name, callee_name) in function_defs:
+        return module_name, callee_name, "function"
+
+    same_module_defs = {
+        definition
+        for definition in function_name_to_defs.get(callee_name, set())
+        if definition[0] == module_name
+    }
+    if len(same_module_defs) == 1:
+        target_module, target_qualified_name = next(iter(same_module_defs))
+        return target_module, target_qualified_name, "function"
+
+    for candidate in _resolution_candidates(module_name, callee_name, aliases, modules):
+        target = _split_known_function(candidate, function_defs, modules)
+        if target is not None:
+            return target[0], target[1], "function"
+
+    global_defs = function_name_to_defs.get(callee_name, set())
+    if len(global_defs) == 1:
+        target_module, target_qualified_name = next(iter(global_defs))
+        return target_module, target_qualified_name, "function"
+    return None
+
+
+def _split_known_function(
+    qualified_name: str,
+    function_defs: set[tuple[str, str]],
+    modules: set[str],
+) -> tuple[str, str] | None:
+    parts = qualified_name.split(".")
+    for index in range(len(parts) - 1, 0, -1):
+        module_name = ".".join(parts[:index])
+        function_name = ".".join(parts[index:])
+        if (module_name, function_name) in function_defs:
+            return module_name, function_name
+        if module_name in modules and (module_name, parts[index]) in function_defs:
+            return module_name, parts[index]
     return None
 
 

@@ -33,6 +33,10 @@ class RelationStats:
     hypothesis_cases: int
     helper_boundary_cases: int
     helper_boundary_candidates: int
+    common_ast_cases: int
+    common_ast_candidates: int
+    interprocedural_cases: int
+    interprocedural_candidates: int
 
 
 def parse_args() -> argparse.Namespace:
@@ -123,6 +127,28 @@ def relation_stats(analysis_dir: Path, generated_tests: Path) -> RelationStats:
         generated_tests / "test_generated_helper_boundaries.py",
         "HELPER_BOUNDARY_CASES",
     )
+    common_ast_cases = list_constant(
+        generated_tests / "test_generated_common_ast_properties.py",
+        "COMMON_AST_CASES",
+    )
+    common_ast_candidates = sum(
+        len(read_tsv(analysis_dir / "semantic_out" / filename))
+        for filename in (
+            "dataclass_collection_iteration.csv",
+            "asserted_dataclass_field.csv",
+            "matched_dataclass_subject.csv",
+            "async_obligation_candidate.csv",
+            "generator_output_candidate.csv",
+            "alias_attribute_read.csv",
+        )
+    )
+    interprocedural_cases = list_constant(
+        generated_tests / "test_generated_interprocedural_properties.py",
+        "INTERPROCEDURAL_CASES",
+    )
+    interprocedural_candidates = len(
+        read_tsv(analysis_dir / "semantic_out" / "observable_output_slice.csv")
+    )
     unique_transform_relations = {
         (
             case.get("class_module"),
@@ -143,6 +169,10 @@ def relation_stats(analysis_dir: Path, generated_tests: Path) -> RelationStats:
         hypothesis_cases=len(hypothesis_cases),
         helper_boundary_cases=len(helper_cases),
         helper_boundary_candidates=helper_boundary_candidates,
+        common_ast_cases=len(common_ast_cases),
+        common_ast_candidates=common_ast_candidates,
+        interprocedural_cases=len(interprocedural_cases),
+        interprocedural_candidates=interprocedural_candidates,
     )
 
 
@@ -295,6 +325,16 @@ def write_reports(
         if stats.helper_boundary_candidates == 0
         else (stats.helper_boundary_cases / stats.helper_boundary_candidates) * 100
     )
+    common_ast_yield = (
+        0.0
+        if stats.common_ast_candidates == 0
+        else (stats.common_ast_cases / stats.common_ast_candidates) * 100
+    )
+    interprocedural_yield = (
+        0.0
+        if stats.interprocedural_candidates == 0
+        else (stats.interprocedural_cases / stats.interprocedural_candidates) * 100
+    )
     coverage_chart = svg_bar_chart(
         "Line Coverage by Suite",
         [
@@ -308,6 +348,8 @@ def write_reports(
         [
             ("Transform relations", relation_yield, f"{stats.unique_transform_relations_tested}/{stats.transform_targets}"),
             ("Helper boundaries", helper_yield, f"{stats.helper_boundary_cases}/{stats.helper_boundary_candidates}"),
+            ("Common AST", common_ast_yield, f"{stats.common_ast_cases}/{stats.common_ast_candidates}"),
+            ("Interproc", interprocedural_yield, f"{stats.interprocedural_cases}/{stats.interprocedural_candidates}"),
         ],
     )
     composition_chart = svg_stacked_bar(
@@ -316,6 +358,8 @@ def write_reports(
             ("Examples", stats.example_cases, "#2563eb"),
             ("Hypothesis", stats.hypothesis_cases, "#059669"),
             ("Helper boundaries", stats.helper_boundary_cases, "#7c3aed"),
+            ("Common AST", stats.common_ast_cases, "#db2777"),
+            ("Interproc", stats.interprocedural_cases, "#ea580c"),
         ],
     )
 
@@ -345,6 +389,10 @@ def write_reports(
         f"- Hypothesis property cases: {stats.hypothesis_cases}",
         f"- Helper boundary candidates: {stats.helper_boundary_candidates}",
         f"- Helper boundary cases: {stats.helper_boundary_cases} ({helper_yield:.1f}%)",
+        f"- Common-AST candidates: {stats.common_ast_candidates}",
+        f"- Common-AST cases: {stats.common_ast_cases} ({common_ast_yield:.1f}%)",
+        f"- Interprocedural candidates: {stats.interprocedural_candidates}",
+        f"- Interprocedural cases: {stats.interprocedural_cases} ({interprocedural_yield:.1f}%)",
         "",
         "## Coverage Delta",
         "",

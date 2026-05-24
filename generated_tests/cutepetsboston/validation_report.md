@@ -3,7 +3,7 @@
 - Generated tests: `/Users/zhengwangyuan/repos/SPS-VeriSpec/generated_tests/cutepetsboston`
 - Target project: `/Users/zhengwangyuan/repos/SPS-VeriSpec/CutePetsBoston`
 - Return code: `0`
-- Passed: 67
+- Passed: 73
 - Failed: 0
 - Errors: 0
 - Skipped: 0
@@ -19,7 +19,8 @@
 ## Pytest Output
 
 ```text
-...................................................................      [100%]
-67 passed in 1.41s
+........................................................................ [ 98%]
+.                                                                        [100%]
+73 passed in 1.31s
 
 ```

@@ -23,14 +23,18 @@ The extractor emits Souffle-compatible base facts for:
 - function and method definitions
 - function names split from qualified names
 - function calls
+- resolved call targets and call arguments
+- call protocol events such as validate/authenticate/publish/open/close
 - class instantiations
 - environment variable reads
 - constructor keyword arguments
 - direct and local-derived field-to-constructor-argument flows
 - local variable dependencies on dataclass fields
 - call-result assignments
+- resolved call-result assignments and return-call sites
 - local dataclass value assignments
 - condition attribute reads
+- branch conditions and normalized condition atoms
 - literal and `None` returns
 - assigned literals and constructor argument literals
 - constructor/return string-composition markers for f-strings, joins, format calls, and simple concatenation
@@ -89,6 +93,7 @@ Useful outputs:
 - `defaulted_field.csv`
 - `factory_backed_field.csv`
 - `dataclass_dependency.csv`
+- `reachable_dataclass_dependency.csv`
 - `dataclass_shape.csv`
 
 ## Generic dataclass-to-effects modeling
@@ -118,6 +123,11 @@ Useful outputs:
 - `dataclass_field_effect.csv`
 - `dataclass_effect.csv`
 - `dataclass_transformation.csv`
+- `function_call_edge.csv`
+- `reachable_function_call.csv`
+- `interprocedural_dataclass_function.csv`
+- `interprocedural_dataclass_field_effect.csv`
+- `interprocedural_dataclass_effect.csv`
 
 ## Generic deduction over surfaced relations
 
@@ -147,6 +157,11 @@ Useful outputs:
 - `field_to_dataclass_transform.csv`
 - `unread_required_field.csv`
 - `effectful_dataclass.csv`
+- `function_call_edge.csv`
+- `reachable_function_call.csv`
+- `interprocedural_function_dataclass.csv`
+- `interprocedural_field_use_in_function.csv`
+- `interprocedural_dataclass_transform.csv`
 
 ## Generic dataclass test-target modeling
 
@@ -166,7 +181,9 @@ This layer derives relations intended to drive tests and design review:
 - frozen dataclasses that still contain mutable factory-backed fields
 - class methods that accept, return, or construct dataclasses
 - method-level dataclass transformations
+- interprocedural method-level dataclass transformations
 - field-to-constructor-argument mappings
+- interprocedural field-to-constructor-argument mappings reached through calls
 - local dependency mappings through aliases and composed expressions
 - optional fields read in branch conditions
 - dataclass contracts inherited or overridden by subclasses
@@ -176,6 +193,8 @@ Useful outputs:
 - `class_method_uses_dataclass.csv`
 - `method_dataclass_transform.csv`
 - `method_field_to_constructor_arg.csv`
+- `interprocedural_method_dataclass_transform.csv`
+- `interprocedural_method_field_to_constructor_arg.csv`
 - `transform_optional_field_test_target.csv`
 - `transform_required_field_test_target.csv`
 - `optional_field_read_in_condition.csv`
@@ -186,7 +205,8 @@ Useful outputs:
 
 After schema, effect, deduction, and test-target modeling, the semantic layer
 derives conservative behavioral obligations from value flow, literals, strings,
-and numeric bounds:
+numeric bounds, interprocedural call summaries, slicing, abstract states, and
+protocol-order candidates:
 
 ```bash
 mkdir -p /tmp/project-semantic-out
@@ -205,11 +225,35 @@ candidates that can be validated with concrete tests:
 - string composition targets
 - numeric bounds and boundary-test candidates around comparisons and slicing
 - conflicting numeric-bound candidates
+- call-parameter bindings and interprocedural local field flow
+- observable and backward output slices
+- external-call field slices and control-dependence slices
+- abstract value/numeric states for nullness, emptiness, string length, and
+  status/result literals
+- nullable use-before-guard candidates
+- typestate transitions and protocol obligation candidates
 
 Useful outputs:
 
 - `semantic_field_flow.csv`
 - `composed_semantic_field_flow.csv`
+- `function_summary_input_to_output.csv`
+- `call_parameter_binding.csv`
+- `interprocedural_local_field_flow.csv`
+- `interprocedural_method_transform.csv`
+- `interprocedural_field_flow.csv`
+- `multi_hop_interprocedural_field_flow.csv`
+- `observable_output_slice.csv`
+- `backward_output_slice.csv`
+- `function_backward_slice.csv`
+- `external_call_field_slice.csv`
+- `control_dependence_slice.csv`
+- `abstract_value_state.csv`
+- `abstract_numeric_state.csv`
+- `nullable_use_before_guard_candidate.csv`
+- `typestate_transition.csv`
+- `protocol_obligation_candidate.csv`
+- `typestate_protocol_violation.csv`
 - `observable_required_field.csv`
 - `lossy_required_field_candidate.csv`
 - `dataclass_bool_literal.csv`

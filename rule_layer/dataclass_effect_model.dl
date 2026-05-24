@@ -39,6 +39,53 @@
 .decl dataclass_transformation(module_name:symbol, source_class:symbol, target_class:symbol, qualified_name:symbol)
 .output dataclass_transformation
 
+.decl function_call_edge(
+  caller_module:symbol,
+  caller_qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  line:number
+)
+.output function_call_edge
+
+.decl reachable_function_call(
+  caller_module:symbol,
+  caller_qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol
+)
+.output reachable_function_call
+
+.decl interprocedural_dataclass_function(
+  module_name:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  link:FunctionLink
+)
+.output interprocedural_dataclass_function
+
+.decl interprocedural_dataclass_field_effect(
+  module_name:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  field_event:FieldEvent
+)
+.output interprocedural_dataclass_field_effect
+
+.decl interprocedural_dataclass_effect(
+  module_name:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  effect:EffectEvent
+)
+.output interprocedural_dataclass_effect
+
 dataclass_function(Module, Class, QualifiedName, ["param_type", ParamName]) :-
   function_param_type_ref(Module, QualifiedName, ParamName, Class),
   dataclass(_, Class, _, _).
@@ -103,3 +150,28 @@ dataclass_transformation(Module, SourceClass, TargetClass, QualifiedName) :-
   dataclass(_, SourceClass, _, _),
   dataclass(_, TargetClass, _, _),
   SourceClass != TargetClass.
+
+function_call_edge(CM, CQ, TM, TQ, Line) :-
+  call_target(CM, CQ, _, TM, TQ, _, Line).
+
+reachable_function_call(CM, CQ, TM, TQ) :-
+  function_call_edge(CM, CQ, TM, TQ, _).
+
+reachable_function_call(CM, CQ, TM, TQ) :-
+  function_call_edge(CM, CQ, MidModule, MidQ, _),
+  reachable_function_call(MidModule, MidQ, TM, TQ).
+
+interprocedural_dataclass_function(Module, Class, QualifiedName, CalleeModule, CalleeQ, Link) :-
+  dataclass_function(Module, Class, QualifiedName, _),
+  reachable_function_call(Module, QualifiedName, CalleeModule, CalleeQ),
+  dataclass_function(CalleeModule, Class, CalleeQ, Link).
+
+interprocedural_dataclass_field_effect(Module, Class, QualifiedName, CalleeModule, CalleeQ, FieldEvent) :-
+  dataclass_function(Module, Class, QualifiedName, _),
+  reachable_function_call(Module, QualifiedName, CalleeModule, CalleeQ),
+  dataclass_field_effect(CalleeModule, Class, CalleeQ, FieldEvent).
+
+interprocedural_dataclass_effect(Module, Class, QualifiedName, CalleeModule, CalleeQ, Effect) :-
+  dataclass_function(Module, Class, QualifiedName, _),
+  reachable_function_call(Module, QualifiedName, CalleeModule, CalleeQ),
+  dataclass_effect(CalleeModule, Class, CalleeQ, Effect).

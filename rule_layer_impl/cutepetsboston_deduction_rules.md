@@ -7,7 +7,7 @@ architecture and for deciding where extractor precision should improve next.
 Generated with:
 
 ```bash
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-project-rules
+python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-slicing-ai-check
 ```
 
 ## Current deduction summary
@@ -19,6 +19,11 @@ python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-proj
 - Semantic field flows: 54
 - Composed semantic field flows: 86
 - Observable required fields: 21
+- Backward output slices: 69
+- External-call field slices: 67
+- Control-dependence slices: 16
+- Nullable use-before-guard candidates: 12
+- Protocol obligation candidates: 3
 - Numeric boundary candidates: 18
 
 ## Direct transformation rules
@@ -101,6 +106,12 @@ deduction graph:
 - `PostResult.success` is observed as explicit `True` and `False` constructor literals across publish paths
 - string-length and truncation code produces boundary candidates, for example around description cleanup and platform caption limits
 - lossy required-field candidates identify transforms where a required field has no detected flow into the returned dataclass
+- external-call field slices identify dataclass fields that influence SDK,
+  HTTP, print/debug, or formatting call arguments
+- nullable-use candidates identify optional fields read without an obvious
+  earlier guard or validation event in the same function
+- protocol candidates identify publish-like calls without an obvious earlier
+  validate/authenticate event in the same function
 
 ## Project-specific verification targets
 
@@ -110,6 +121,10 @@ deduction graph:
 - Verify that Mastodon caption splitting preserves the relation `Post.text -> PreparedCaption.caption_text -> CaptionThread.main_caption/replies`.
 - Verify boundary behavior for discovered numeric limits such as description truncation and platform caption limits.
 - Verify success/failure result literals align with the concrete branch behavior that constructs them.
+- Review external-call field slices for fields that cross network/API/logging
+  boundaries.
+- Review protocol candidates in `main.run` and Mastodon thread posting to decide
+  whether cross-method authentication summaries are needed.
 - Verify that Slack failure notification remains outside the dataclass transformation graph unless a future alert-result dataclass is introduced.
 
 ## Recommended extractor improvements for this project
@@ -117,5 +132,8 @@ deduction graph:
 - Resolve generic type arguments for `PipelineResult[CaptionThread]`.
 - Add better class identity resolution across imports to avoid name-only joins.
 - Add branch-local return facts that connect specific optional-field checks to specific returned constructors.
-- Add CFG/control-dependence facts for validation and guarded-effect reasoning.
+- Add CFG/control-dependence facts beyond current line-order slices for
+  validation and guarded-effect reasoning.
 - Add more precise call-boundary summaries so SDK/API return values do not over-approximate semantic influence.
+- Add cross-method protocol summaries so authenticate/validate performed in one
+  method can discharge publish/use obligations in another method.

@@ -6,7 +6,7 @@ generic dataclass test model and the generic semantic model.
 Generated with:
 
 ```bash
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-updated-run2
+python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-slicing-ai-check
 ```
 
 ## Model layers
@@ -27,6 +27,9 @@ They derive test-oriented relations from:
 - string composition targets
 - numeric comparisons, `len(...)`, and slice bounds
 - composed semantic field flows and observable required fields
+- interprocedural summaries and observable output slices
+- external-call field slices and control-dependence slices
+- nullable-use and protocol-order review candidates
 
 ## Current project test targets
 
@@ -113,6 +116,8 @@ Current output:
 generated_tests/cutepetsboston/test_generated_dataclass_properties.py
 generated_tests/cutepetsboston/test_generated_dataclass_hypothesis.py
 generated_tests/cutepetsboston/test_generated_helper_boundaries.py
+generated_tests/cutepetsboston/test_generated_common_ast_properties.py
+generated_tests/cutepetsboston/test_generated_interprocedural_properties.py
 generated_tests/cutepetsboston/README.md
 ```
 
@@ -128,10 +133,14 @@ The current generated files emit the conservative executable subset: public
 `Post.tags`, and `Post.alt_text`, plus optional passthrough checks for
 `adoption_url -> link` and `image_url -> image_url`. The helper-boundary file
 adds lower-confidence private-helper tests when a string-length boundary can be
-driven directly.
+driven directly. The common-AST file covers observable dataclass collection
+iteration relations, and the interprocedural file covers public observable
+string-output slices such as `AdoptablePet` fields reaching
+`CaptionThread.main_caption` through `PosterMastodon.build_formatting_pipeline`.
 
 Publishing paths, private Mastodon caption helpers that need dataclass/custom
-input construction, and branch-only targets are still reported as review
+input construction, optional/collection interprocedural slices, nullable-use
+candidates, and protocol-order candidates are still reported as review
 candidates because their generated tests need either mocks, stronger
 control-dependence facts, or a more precise assertion oracle.
 
@@ -141,7 +150,8 @@ control-dependence facts, or a more precise assertion oracle.
 - Semantic flow is conservative and should be validated with concrete tests.
 - Call-result propagation is conservative; mappings through SDK/API return values can over-approximate semantic influence.
 - Override matching is name-based and base-class-name-based; import-resolved inheritance exists as facts but matching still needs better cross-module precision.
-- Branch facts show that a field appears in a condition, not which return branch it controls.
+- Branch/control-dependence facts show candidate line-order influence, not a
+  path-sensitive guarantee about which return branch is controlled.
 
 ## Future potential work
 
@@ -152,6 +162,8 @@ control-dependence facts, or a more precise assertion oracle.
 - Extend Hypothesis templates beyond current transform properties into optional
   field combinations, richer Mastodon length boundaries, tag normalization, and
   contract conformance.
+- Add executable templates for selected slicing, nullable-use, and
+  protocol-order candidates once their assertion oracles are strong enough.
 - Explore mutation testing inspired by *The Fuzzing Book* by mutating
   dataclass mappings, branch conditions, and generated inputs, then measuring
   whether generated tests detect the change.

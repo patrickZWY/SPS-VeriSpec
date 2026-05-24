@@ -62,17 +62,26 @@ The extractor currently emits these relevant predicates:
 - `defines_function(Module, QualifiedName, Arity)`
 - `function_name(Module, QualifiedName, Name)`
 - `calls(Module, CallerQualifiedName, CalleeName, LineNumber)`
+- `call_target(Module, CallerQualifiedName, CalleeName, CalleeModule, CalleeQualifiedName, CallKind, LineNumber)`
+- `call_argument(Module, CallerQualifiedName, CalleeName, ArgPosition, ArgName, SourceExpr, LineNumber)`
+- `call_protocol_event(Module, QualifiedName, ReceiverExpr, EventKind, CalleeName, LineNumber)`
 - `instantiates(Module, CallerQualifiedName, ClassName, LineNumber)`
 - `reads_env_var(Module, CallerQualifiedName, EnvVarName, LineNumber)`
 - `constructor_kwarg(Module, QualifiedName, ConstructedClass, ArgName, SourceExpr, LineNumber)`
 - `return_constructor_kwarg(Module, QualifiedName, ConstructedClass, ArgName, SourceExpr, LineNumber)`
 - `field_flows_to_constructor_arg(Module, QualifiedName, SourceParam, SourceField, ConstructedClass, ArgName, LineNumber)`
 - `condition_reads_attribute(Module, QualifiedName, OwnerName, AttributeName, LineNumber)`
+- `branch_condition(Module, QualifiedName, ConditionExpr, LineNumber)`
+- `condition_atom(Module, QualifiedName, AtomExpr, AtomState, LineNumber)`
 - `returns_none(Module, QualifiedName, LineNumber)`
 - `returns_literal(Module, QualifiedName, LiteralKind, LiteralValue, LineNumber)`
 - `method_override(Module, ClassName, BaseName, MethodName, QualifiedName)`
 - `local_depends_on_field(Module, QualifiedName, LocalName, SourceParam, SourceField, LineNumber)`
 - `call_result_assigned(Module, QualifiedName, LocalName, CalleeName, LineNumber)`
+- `resolved_call_result_assigned(Module, QualifiedName, LocalName, CalleeModule, CalleeQualifiedName, LineNumber)`
+- `return_call(Module, QualifiedName, CalleeName, LineNumber)`
+- `resolved_return_call(Module, QualifiedName, CalleeModule, CalleeQualifiedName, LineNumber)`
+- `return_local(Module, QualifiedName, LocalName, LineNumber)`
 - `local_dataclass_value(Module, QualifiedName, LocalName, ClassName, LineNumber)`
 - `literal_assigned(Module, QualifiedName, LocalName, LiteralKind, LiteralValue, LineNumber)`
 - `constructor_arg_literal(Module, QualifiedName, ConstructedClass, ArgName, LiteralKind, LiteralValue, LineNumber)`
@@ -105,7 +114,7 @@ The model should assume:
 4. Then connect functions or methods to the dataclass layer through typed parameters, typed returns, constructor sites, field reads/writes, and exception effects.
 5. Then use Souffle deduction to surface hidden relations such as reachable transformations, bridge dataclasses, field-to-transformation links, and unread required fields.
 6. Then derive test-generation targets from class/dataclass roles, method-level transformations, field-to-constructor-argument flows, optional-field branches, mutability, and override contracts.
-7. Then derive semantic candidates from composed field flows, observable required fields, literal constructor values, string composition, and numeric bounds. Keep these conservative and validate them with generated concrete tests.
+7. Then derive semantic candidates from composed field flows, observable required fields, literal constructor values, string composition, numeric bounds, interprocedural summaries, slicing, abstract states, and protocol-order events. Keep these conservative and validate them with generated concrete tests or human review.
 
 ## Prompt template for dataclass modeling
 
@@ -142,17 +151,26 @@ Base predicates:
 - defines_function(Module, QualifiedName, Arity)
 - function_name(Module, QualifiedName, Name)
 - calls(Module, CallerQualifiedName, CalleeName, LineNumber)
+- call_target(Module, CallerQualifiedName, CalleeName, CalleeModule, CalleeQualifiedName, CallKind, LineNumber)
+- call_argument(Module, CallerQualifiedName, CalleeName, ArgPosition, ArgName, SourceExpr, LineNumber)
+- call_protocol_event(Module, QualifiedName, ReceiverExpr, EventKind, CalleeName, LineNumber)
 - instantiates(Module, CallerQualifiedName, ClassName, LineNumber)
 - reads_env_var(Module, CallerQualifiedName, EnvVarName, LineNumber)
 - constructor_kwarg(Module, QualifiedName, ConstructedClass, ArgName, SourceExpr, LineNumber)
 - return_constructor_kwarg(Module, QualifiedName, ConstructedClass, ArgName, SourceExpr, LineNumber)
 - field_flows_to_constructor_arg(Module, QualifiedName, SourceParam, SourceField, ConstructedClass, ArgName, LineNumber)
 - condition_reads_attribute(Module, QualifiedName, OwnerName, AttributeName, LineNumber)
+- branch_condition(Module, QualifiedName, ConditionExpr, LineNumber)
+- condition_atom(Module, QualifiedName, AtomExpr, AtomState, LineNumber)
 - returns_none(Module, QualifiedName, LineNumber)
 - returns_literal(Module, QualifiedName, LiteralKind, LiteralValue, LineNumber)
 - method_override(Module, ClassName, BaseName, MethodName, QualifiedName)
 - local_depends_on_field(Module, QualifiedName, LocalName, SourceParam, SourceField, LineNumber)
 - call_result_assigned(Module, QualifiedName, LocalName, CalleeName, LineNumber)
+- resolved_call_result_assigned(Module, QualifiedName, LocalName, CalleeModule, CalleeQualifiedName, LineNumber)
+- return_call(Module, QualifiedName, CalleeName, LineNumber)
+- resolved_return_call(Module, QualifiedName, CalleeModule, CalleeQualifiedName, LineNumber)
+- return_local(Module, QualifiedName, LocalName, LineNumber)
 - local_dataclass_value(Module, QualifiedName, LocalName, ClassName, LineNumber)
 - literal_assigned(Module, QualifiedName, LocalName, LiteralKind, LiteralValue, LineNumber)
 - constructor_arg_literal(Module, QualifiedName, ConstructedClass, ArgName, LiteralKind, LiteralValue, LineNumber)
@@ -203,6 +221,12 @@ A good answer typically does some of the following:
 - distinguishes observable required fields from required fields that appear lossy in a transform
 - derives boundary-test candidates from numeric comparisons and slice bounds
 - surfaces literal status/result fields such as `success=True` or `success=False`
+- derives interprocedural summaries and observable/backward output slices
+- surfaces external-call field slices and control-dependence slices
+- classifies small abstract states such as nullness, emptiness, string-length
+  bounds, and status/result literals
+- flags typestate/protocol order candidates such as validate/authenticate before
+  publish-like calls
 - summarizes dataclasses without pretending to know runtime semantics
 
 ## Review checklist
@@ -220,22 +244,25 @@ Use this checklist before accepting an LLM-generated model:
 
 The current extractor already supports schema facts, typed function signatures,
 constructor returns, constructor keyword arguments, direct and local-derived
-field-to-constructor argument flow, field access, condition field reads, literal
-returns, assigned literals, constructor argument literals, string-composition
-markers, numeric literals, numeric assignments, `len(...)` calls, numeric
-comparisons, slice upper bounds, call-result assignment, local dataclass values,
+field-to-constructor argument flow, field access, condition field reads,
+branch-condition atoms, call arguments, resolved call targets, protocol event
+classification, return-call sites, literal returns, assigned literals,
+constructor argument literals, string-composition markers, numeric literals,
+numeric assignments, `len(...)` calls, numeric comparisons, slice upper bounds,
+call-result assignment, resolved call-result assignment, local dataclass values,
 method override candidates, and basic exception facts.
 
 The next useful upgrades after this are:
 
 - `reads_dataclass_field(Module, QualifiedName, ClassName, FieldName, LineNumber)` with resolved class identity instead of parameter-name joining
 - `writes_dataclass_field(Module, QualifiedName, ClassName, FieldName, LineNumber)` with resolved class identity
-- `calls_resolved(Module, QualifiedName, TargetModule, TargetQualifiedName, LineNumber)`
 - `branch_return(Module, QualifiedName, ConditionId, ReturnedClass, LineNumber)` to connect guards to returned constructors
-- CFG/control-dependence facts for validation and guarded-effect reasoning
+- CFG/control-dependence facts for validation and guarded-effect reasoning beyond
+  the current line-order slice candidates
 - `writes_env_var(Module, QualifiedName, EnvVarName, LineNumber)`
 - `file_effect(Module, QualifiedName, EffectKind, PathHint, LineNumber)`
 - more precise alias/points-to summaries for local variables and object fields
+- higher-precision protocol event classification for framework-specific APIs
 
 The default should remain:
 model all dataclasses first, then connect code behavior to that schema only when needed.

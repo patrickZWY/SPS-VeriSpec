@@ -33,6 +33,11 @@ Useful output files:
 - `/tmp/project-effect-out/dataclass_field_effect.csv`
 - `/tmp/project-effect-out/dataclass_effect.csv`
 - `/tmp/project-effect-out/dataclass_transformation.csv`
+- `/tmp/project-effect-out/function_call_edge.csv`
+- `/tmp/project-effect-out/reachable_function_call.csv`
+- `/tmp/project-effect-out/interprocedural_dataclass_function.csv`
+- `/tmp/project-effect-out/interprocedural_dataclass_field_effect.csv`
+- `/tmp/project-effect-out/interprocedural_dataclass_effect.csv`
 
 ## Example output shape
 
@@ -65,10 +70,19 @@ Example dataclass transformations:
 - `dataclass_field_effect` records field reads and writes when the dataclass is visible through a typed function parameter.
 - `dataclass_effect` records generic effects in dataclass-related functions: calls, env reads, exception handling, raises, and dataclass construction or return events.
 - `dataclass_transformation` approximates value-shape transitions between dataclasses across functions.
+- `function_call_edge` and `reachable_function_call` expose the resolved call
+  graph available to later stages.
+- `interprocedural_dataclass_function`,
+  `interprocedural_dataclass_field_effect`, and
+  `interprocedural_dataclass_effect` lift dataclass/effect associations across
+  reachable calls.
 
 ## Current limitations
 
-- Class identity is mostly name-based, not fully import-resolved.
+- Class identity is improved by `resolved_*` facts, but there are still dynamic
+  import and generic-type limitations.
 - This effect layer records parameter-based field effects; local alias and call-result inference is handled in the deduction and test-target layers.
 - `dataclass_effect` currently treats all calls inside a dataclass-related function as associated effects. That is useful for exploration but can over-approximate.
 - Function-level association is still syntactic; it does not imply an exact runtime dataflow proof.
+- Interprocedural effect reachability is callgraph-based and can over-approximate
+  when callbacks, dynamic dispatch, or SDK calls are involved.

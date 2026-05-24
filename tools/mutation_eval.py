@@ -171,6 +171,157 @@ def add_transform_mutants(
         )
 
 
+def add_collection_iteration_mutants(
+    analysis_dir: Path,
+    target_project: Path,
+    files: dict[str, str],
+    mutants: list[Mutant],
+    seen: set[tuple[str, int, str, str]],
+    max_mutants: int,
+) -> None:
+    for row in read_tsv(analysis_dir / "semantic_out" / "dataclass_collection_iteration.csv"):
+        if len(row) < 7 or len(mutants) >= max_mutants:
+            break
+        module_name, qualified_name, _source_module, source_class, source_field, item_name, iteration_kind = row[:7]
+        relative_path = files.get(module_name)
+        if relative_path is None:
+            continue
+        path = target_project / relative_path
+        if not path.exists():
+            continue
+
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for index, source_line in enumerate(lines, start=1):
+            if source_field not in source_line or item_name not in source_line:
+                continue
+            if " for " not in source_line:
+                continue
+
+            replacements = [
+                (f"{source_field})", "[])", "drop iterated dataclass collection"),
+                (f"{source_field} ", "[] ", "drop iterated dataclass collection"),
+                (f"{source_field}]", "[]]", "drop iterated dataclass collection"),
+                (item_name, '""', "drop iterated item contribution"),
+            ]
+            for original, replacement, reason in replacements:
+                key = (relative_path, index, original, replacement)
+                if original not in source_line or key in seen or len(mutants) >= max_mutants:
+                    continue
+                seen.add(key)
+                mutants.append(
+                    Mutant(
+                        id=f"m{len(mutants) + 1:03d}",
+                        module_name=module_name,
+                        qualified_name=qualified_name,
+                        relative_path=relative_path,
+                        line=index,
+                        operator="collection_iteration_replace",
+                        original=original,
+                        replacement=replacement,
+                        reason=(
+                            f"common-AST collection iteration mutation for "
+                            f"`{source_class}.{source_field}` via `{iteration_kind}`"
+                        ),
+                    )
+                )
+            break
+
+
+def add_interprocedural_pipeline_mutants(
+    analysis_dir: Path,
+    target_project: Path,
+    files: dict[str, str],
+    mutants: list[Mutant],
+    seen: set[tuple[str, int, str, str]],
+    max_mutants: int,
+) -> None:
+    multi_hop_pairs = {
+        (row[0], row[1], row[3], row[4])
+        for row in read_tsv(analysis_dir / "semantic_out" / "multi_hop_interprocedural_field_flow.csv")
+        if len(row) >= 6
+    }
+    if not multi_hop_pairs:
+        return
+
+    for row in read_tsv(analysis_dir / "test_out" / "method_dataclass_transform.csv"):
+        if len(row) < 7 or len(mutants) >= max_mutants:
+            break
+        class_module, _class_name, qualified_name, source_module, source_class, target_module, target_class = row[:7]
+        method = qualified_name.rsplit(".", 1)[-1]
+        if method.startswith("_") or method == "publish":
+            continue
+        if (source_module, source_class, target_module, target_class) not in multi_hop_pairs:
+            continue
+        relative_path = files.get(class_module)
+        if relative_path is None:
+            continue
+        path = target_project / relative_path
+        if not path.exists():
+            continue
+
+        lines = path.read_text(encoding="utf-8").splitlines()
+        method_start = None
+        method_indent = 0
+        method_pattern = re.compile(rf"^(\s*)def\s+{re.escape(method)}\s*\(")
+        for index, source_line in enumerate(lines):
+            match = method_pattern.match(source_line)
+            if match:
+                method_start = index
+                method_indent = len(match.group(1))
+                break
+        if method_start is None:
+            continue
+        method_end = len(lines)
+        next_def_pattern = re.compile(r"^(\s*)def\s+\w+")
+        for index in range(method_start + 1, len(lines)):
+            match = next_def_pattern.match(lines[index])
+            if match and len(match.group(1)) <= method_indent:
+                method_end = index
+                break
+
+        replacements = [
+            (
+                "self.format_post",
+                "lambda pet: Post(text='', image_url=None, link=None, alt_text=None, tags=[])",
+                "replace composed pipeline formatting phase with empty output",
+            ),
+            (
+                "self._prepare_caption",
+                "lambda post: PreparedCaption(post=post, caption_text='', tags=[], tag_suffix='')",
+                "replace composed pipeline preparation phase with empty output",
+            ),
+        ]
+        for index in range(method_start + 1, method_end):
+            source_line = lines[index]
+            if len(mutants) >= max_mutants:
+                break
+            if not any(original in source_line for original, _, _ in replacements):
+                continue
+            for original, replacement, reason in replacements:
+                if original not in source_line or len(mutants) >= max_mutants:
+                    continue
+                key = (relative_path, index, original, replacement)
+                if key in seen:
+                    continue
+                seen.add(key)
+                mutants.append(
+                    Mutant(
+                        id=f"m{len(mutants) + 1:03d}",
+                        module_name=class_module,
+                        qualified_name=qualified_name,
+                        relative_path=relative_path,
+                        line=index + 1,
+                        operator="interprocedural_pipeline_replace",
+                        original=original,
+                        replacement=replacement,
+                        reason=(
+                            f"interprocedural pipeline mutation for "
+                            f"`{source_class} -> {target_class}`"
+                        ),
+                    )
+                )
+
+
 def generate_mutants(analysis_dir: Path, target_project: Path, max_mutants: int) -> list[Mutant]:
     files = module_files(analysis_dir)
     mutants: list[Mutant] = []
@@ -185,6 +336,24 @@ def generate_mutants(analysis_dir: Path, target_project: Path, max_mutants: int)
         seen,
         max_mutants,
         transform_limit,
+    )
+
+    add_collection_iteration_mutants(
+        analysis_dir,
+        target_project,
+        files,
+        mutants,
+        seen,
+        max_mutants,
+    )
+
+    add_interprocedural_pipeline_mutants(
+        analysis_dir,
+        target_project,
+        files,
+        mutants,
+        seen,
+        max_mutants,
     )
 
     for row in read_tsv(analysis_dir / "semantic_out" / "numeric_bound.csv"):

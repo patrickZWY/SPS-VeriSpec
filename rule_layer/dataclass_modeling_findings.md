@@ -38,9 +38,11 @@ souffle -F /tmp/project-facts -D /tmp/project-dataclass-out \
 Useful output files:
 
 - `/tmp/project-dataclass-out/modeled_dataclass.csv`
+- `/tmp/project-dataclass-out/modeled_dataclass_option.csv`
 - `/tmp/project-dataclass-out/dataclass_field_shape.csv`
 - `/tmp/project-dataclass-out/dataclass_shape.csv`
 - `/tmp/project-dataclass-out/dataclass_dependency.csv`
+- `/tmp/project-dataclass-out/reachable_dataclass_dependency.csv`
 
 ## Example output shape
 
@@ -77,9 +79,14 @@ Example factory-backed fields:
 ## What the outputs mean
 
 - `modeled_dataclass` is the complete discovered dataclass inventory.
+- `modeled_dataclass_option` records the standard `@dataclass` option surface,
+  including whether each option was explicit or inherited from the dataclass
+  default: `init`, `repr`, `eq`, `order`, `unsafe_hash`, `frozen`,
+  `match_args`, `kw_only`, `slots`, and `weakref_slot`.
 - `dataclass_field_shape` packages field-level metadata into a Souffle record.
 - `required_field`, `optional_field`, `defaulted_field`, and `factory_backed_field` support later invariant generation.
 - `dataclass_dependency` approximates schema-level links between dataclasses through field type references.
+- `reachable_dataclass_dependency` composes schema dependencies transitively.
 - `dataclass_shape` gives a compact summary per dataclass: field count, required count, optional count, defaulted count, factory-backed field count, and frozen status.
 
 ## Why this is the right abstraction level

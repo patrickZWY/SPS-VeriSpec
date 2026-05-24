@@ -41,6 +41,9 @@ python3 tools/run_souffle_models.py <python-project-dir> --work-dir /tmp/project
 - fields that participate in dataclass transformations
 - required fields that never appear in any tracked field-read relation
 - dataclasses that participate in call or exception effects
+- reachable function-call edges and interprocedural dataclass/function links
+- interprocedural field-use and dataclass-transform candidates reached through
+  resolved calls
 
 ## Example output shape
 
@@ -72,6 +75,11 @@ Blind-spot deductions:
 
 - unread required fields are emitted as `<Dataclass>.<field_name>` candidates for review
 
+Interprocedural deductions:
+
+- `<caller> reaches <callee> for <DataclassA> -> <DataclassB>`
+- `<caller> reaches <callee> that reads <Dataclass>.<field_name>`
+
 ## Why this matters
 
 This is the first layer that starts turning extracted and abstracted facts into
@@ -88,3 +96,5 @@ something more like a latent relational model:
 - Reachability is structural, not proof of runtime execution paths.
 - Unread required fields may reflect real blind spots or simply limitations of the current field-access extraction.
 - Semantic flow and boundary-test derivations are handled in `rule_layer/semantic_model.dl`, not this deduction-only layer.
+- Interprocedural deductions depend on resolved call targets and are
+  conservative around dynamic dispatch, callbacks, and framework calls.

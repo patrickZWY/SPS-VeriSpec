@@ -7,7 +7,7 @@ when the application flow changes.
 Generated with:
 
 ```bash
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-project-rules
+python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-slicing-ai-check
 ```
 
 ## Main effect paths
@@ -73,7 +73,9 @@ Fields currently observed as contributing to Mastodon caption transformations:
 The generic semantic model now composes these field influences across
 intermediate dataclasses and also records observable required fields, explicit
 dataclass constructor literals, string-composition targets, and numeric
-boundary candidates.
+boundary candidates. The current semantic layer also records external-call
+field slices, control-dependence slices, abstract-state candidates, and
+protocol-order events that help review effectful paths.
 
 ## Effect categories to watch
 
@@ -86,4 +88,8 @@ boundary candidates.
 - The effect model itself still records parameter-based field reads, while the test-generation and deduction layers add local alias and call-result inference.
 - Function-level call effects are over-approximated: every call inside a dataclass-linked function is associated with that dataclass.
 - Call-result propagation is conservative and can over-approximate semantic influence through SDK/API return values.
-- Branch-local result semantics are still future work; literal result fields are currently not tied to their controlling conditions.
+- Branch-local result semantics are still approximate. Literal result fields can
+  be connected to nearby conditions with line-order control-dependence slices,
+  but a precise CFG/path-sensitive model is still future work.
+- Protocol events such as validate/authenticate/publish are name-classified and
+  line-ordered; cross-method workflows can still appear as review candidates.

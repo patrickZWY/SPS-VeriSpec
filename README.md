@@ -56,6 +56,22 @@ Useful relation outputs include:
 - `/tmp/sps-analysis-run/deduction_out/unread_required_field.csv`
 - `/tmp/sps-analysis-run/semantic_out/semantic_field_flow.csv`
 - `/tmp/sps-analysis-run/semantic_out/composed_semantic_field_flow.csv`
+- `/tmp/sps-analysis-run/semantic_out/function_summary_input_to_output.csv`
+- `/tmp/sps-analysis-run/semantic_out/call_parameter_binding.csv`
+- `/tmp/sps-analysis-run/semantic_out/interprocedural_local_field_flow.csv`
+- `/tmp/sps-analysis-run/semantic_out/interprocedural_method_transform.csv`
+- `/tmp/sps-analysis-run/semantic_out/backward_output_slice.csv`
+- `/tmp/sps-analysis-run/semantic_out/function_backward_slice.csv`
+- `/tmp/sps-analysis-run/semantic_out/external_call_field_slice.csv`
+- `/tmp/sps-analysis-run/semantic_out/control_dependence_slice.csv`
+- `/tmp/sps-analysis-run/semantic_out/abstract_value_state.csv`
+- `/tmp/sps-analysis-run/semantic_out/abstract_numeric_state.csv`
+- `/tmp/sps-analysis-run/semantic_out/nullable_use_before_guard_candidate.csv`
+- `/tmp/sps-analysis-run/semantic_out/protocol_obligation_candidate.csv`
+- `/tmp/sps-analysis-run/semantic_out/typestate_protocol_violation.csv`
+- `/tmp/sps-analysis-run/semantic_out/interprocedural_field_flow.csv`
+- `/tmp/sps-analysis-run/semantic_out/multi_hop_interprocedural_field_flow.csv`
+- `/tmp/sps-analysis-run/semantic_out/observable_output_slice.csv`
 - `/tmp/sps-analysis-run/semantic_out/observable_required_field.csv`
 - `/tmp/sps-analysis-run/semantic_out/lossy_required_field_candidate.csv`
 - `/tmp/sps-analysis-run/semantic_out/boundary_test_candidate.csv`
@@ -77,6 +93,7 @@ This writes:
 - `generated_tests/cutepetsboston/test_generated_dataclass_properties.py`
 - `generated_tests/cutepetsboston/test_generated_dataclass_hypothesis.py`
 - `generated_tests/cutepetsboston/test_generated_helper_boundaries.py`
+- `generated_tests/cutepetsboston/test_generated_common_ast_properties.py`
 - `generated_tests/cutepetsboston/README.md`
 
 The generated tests are intentionally not written into `CutePetsBoston/`.
@@ -90,10 +107,16 @@ PYTHONPATH=/path/to/CutePetsBoston pytest generated_tests/cutepetsboston
 The current generator emits public `format*` dataclass-transformation tests
 where the derived relation has a simple string/list oracle. It also emits an
 optional Hypothesis-backed property test file for the same conservative
-relations. It also emits lower-confidence helper-boundary tests when a private
-helper boundary can be driven by a simple string input. It keeps publishing
-paths, branch-only facts, lossy-flow candidates, and other lower-confidence
-relations in the generated report until stronger oracles are available.
+relations, lower-confidence helper-boundary tests when a private helper
+boundary can be driven by a simple string input, common-AST collection tests,
+and interprocedural observable-slice tests when a public method path can drive
+the source dataclass to the output dataclass. It keeps publishing paths,
+branch-only facts, lossy-flow candidates, interprocedural slices without strong
+executable oracles, and other lower-confidence relations in the generated
+report until stronger oracles are available.
+
+For the current CutePetsBoston snapshot, the generated suite contains 73 tests
+and validates cleanly against the local target checkout.
 
 To run generated tests and write a validation summary:
 
@@ -139,6 +162,22 @@ python3 tools/mutation_eval.py \
   --report /tmp/sps-mutation-eval.md
 ```
 
+## Development requirement
+
+Every feature addition or behavior-changing edit should include an evaluation
+pass that records what changed. At minimum, re-run the generated-test
+validation and the relevant evaluation commands for the changed behavior:
+
+- `tools/validate_generated_tests.py` for generated-test pass/fail/skip changes.
+- `tools/coverage_stats.py` or `tools/evaluation_stats.py` for coverage,
+  relation-to-test yield, and coverage-delta changes.
+- `tools/mutation_eval.py` when the change affects generated tests, boundary
+  behavior, relation-guided transforms, or mutation-relevant logic.
+
+Include the before/after result or a short note explaining why a command was not
+applicable. This keeps new features tied to measurable analysis and testing
+effects instead of only implementation changes.
+
 ## What this project is trying to achieve
 
 The goal is to make testing more automated and iterative. Instead of relying
@@ -160,6 +199,21 @@ For example, the analyzer can currently surface relations such as:
 
 Those relations are not tests yet, but they are structured enough to become
 test templates.
+
+The important research bet is not simply that Datalog can hold many extracted
+facts. The useful outcome depends on deriving interesting relations: semantic,
+behavioral, or cross-cutting properties that are hard to notice from one local
+syntax node. Purely syntactic or structural relations are still useful as raw
+material, but they should not be treated as success by themselves. A relation is
+valuable when it helps generate a compact, nontrivial test, exposes a hidden
+dependency, or explains a behavior-level obligation such as a boundary,
+observable output, status result, or contract conformance case.
+
+As the rule layer grows, relation quality should be evaluated alongside
+quantity. Large relation sets that are mostly local AST shape, type plumbing, or
+long brittle joins are a warning sign: they may be too noisy to compose into
+tests developers can understand. Prefer relation layers that compress low-level
+facts into higher-level test obligations with clear oracles.
 
 ## Project metadata
 
@@ -197,9 +251,28 @@ Implemented:
 - Local dependency tracking through aliases and composed expressions.
 - Conservative call-result read inference.
 - Literal, string-composition, numeric-comparison, `len(...)`, and slice-bound fact extraction.
+- Common AST fact extraction for local aliases, loop/comprehension iteration,
+  assertions, context managers, await/yield expressions, pattern matching, and
+  subscript access.
 - Semantic field-flow, composed-flow, observable-required-field,
   lossy-field-candidate, literal-status, numeric-boundary, and boundary-behavior
   derivations.
+- Semantic relations that use common AST facts, including local-alias closure,
+  alias-normalized attribute reads, dataclass collection iteration, asserted
+  dataclass fields, matched dataclass subjects, async obligation candidates, and
+  generator output candidates.
+- Interprocedural dataflow summaries that lift local semantic field-flow facts
+  into reusable function summaries, compose those summaries across dataclass
+  boundaries, and derive observable output slices.
+- Program-slicing candidates for backward output slices, function-local
+  backward slices, external-call field slices, and control-dependence slices.
+- Initial abstract-interpretation candidates for nullness, emptiness, string
+  length, and status/result literals.
+- Initial typestate/protocol candidates for validate/authenticate-before-publish
+  and open-before-close style ordering mistakes.
+- Dataclass option extraction for the standard `@dataclass` options:
+  `init`, `repr`, `eq`, `order`, `unsafe_hash`, `frozen`, `match_args`,
+  `kw_only`, `slots`, and `weakref_slot`.
 - One-command analysis runner with Markdown summary output.
 - Portable pytest generation from a conservative subset of derived dataclass
   transformation properties.
@@ -207,27 +280,68 @@ Implemented:
   properties.
 - Lower-confidence helper-boundary pytest generation for simple string-length
   helper boundaries.
+- Common-AST pytest generation for observable dataclass collection iteration
+  relations.
 - Generated-test validation runner with pass/fail/skip Markdown reports.
 - Combined coverage-statistics runner for target tests plus generated tests.
 - Evaluation-statistics runner for relation-to-test yield and coverage deltas.
 - Boundary-guided mutation-evaluation runner for handwritten, generated, and
   combined mutation scores.
+- Common-AST collection-iteration mutation operators for dataclass collection
+  fields such as `Post.tags`.
 - Souffle boundary-behavior relations that associate generic numeric bounds
   with dataclass inputs, primitive string returns, and helper return behavior.
 
 Still future work:
 
+Priority next steps:
+
+- Validate generality on a second project. Every claim of generality currently
+  rests on `CutePetsBoston`. Run the full pipeline against at least one other
+  Python project (a Flask service, a CLI tool, or any non-trivial codebase),
+  record which rules fire, which generated tests survive, and publish the
+  delta. This single experiment tells us more about the rule layer than more
+  relations on the existing case study.
+- Tighten or measure oracle strength in generated tests. The current
+  `_assert_observed` helper in
+  `generated_tests/cutepetsboston/test_generated_dataclass_properties.py`
+  accepts substring match, lowercase-normalized match, comma-prefix
+  capitalization, and list-contains. Either replace loose assertions with
+  exact equality where the analysis supports it, or report what fraction of
+  generated tests have a strict-equality oracle versus a loose one in the
+  evaluation report. Passing rate without oracle strength is not evidence.
+- Close the informal-to-formal loop by one step. When a generated test fails,
+  surface the Datalog relation that produced it and let a human accept,
+  reject, or refine that relation. Persist the decision so accepted relations
+  feed the next analysis round and rejected ones are demoted. This is the
+  minimum feedback path that turns the current one-way `facts -> rules ->
+  tests` pipeline into the iterative loop described in `motivation.md`.
+
+- Continue the AST coverage audit. The extractor now captures several common
+  syntax surfaces beyond dataclass flows, but the standard `ast` grammar still
+  includes nodes that are not represented as facts. Missing syntax should be
+  tracked by whether it can support semantic relations and test obligations,
+  not by raw node-count completeness alone.
+- Expand executable interprocedural tests beyond simple observable string
+  slices, especially optional string outputs, collection outputs, and status
+  dataclasses.
 - Expand executable property/fuzz tests from more derived CSV relations,
   especially public boundary, branch-condition, and combination-heavy
   properties.
+- Turn dataclass options beyond `frozen` into executable obligations: constructor
+  shape for `init`/`kw_only`, comparison and ordering behavior for `eq`/`order`,
+  hashing risks for `unsafe_hash`, pattern-matching API shape for `match_args`,
+  and attribute-layout behavior for `slots`/`weakref_slot`.
 - Feed generated-test pass/fail/skip results back into the analysis loop.
 - Improve generated reports so dependency-bound skips, assertion failures,
   human-review properties, and evaluation deltas are easier to compare across
   runs.
 - Resolve imports and type identities more precisely.
-- Add more precise call-boundary summaries.
+- Add higher-precision call-boundary summaries for callbacks, generic
+  containers, and dynamically selected functions.
 - Add branch-local return facts that connect a condition to a specific returned constructor.
-- Add CFG/control-dependence facts for more precise guarded-return and validation reasoning.
+- Refine CFG/control-dependence facts beyond the current line-order slice
+  candidates for more precise guarded-return and validation reasoning.
 - Expand mutation testing beyond the current relation-guided transform and
   solver-adjacent boundary mutants.
 - Explore concolic testing and solver-aided test generation so path conditions
@@ -239,15 +353,27 @@ Still future work:
   are implemented.
 - Use `boundary_behavior.csv` and `helper_boundary_behavior.csv` directly in
   executable test generation instead of relying only on raw numeric-bound facts.
+- Expand common-AST generated tests beyond the current observable dataclass
+  collection iteration template, especially asserted field obligations,
+  pattern-match cases, async result handling, and generator output behavior.
 
 Potential static-analysis directions:
 
 - Lightweight points-to/may-alias analysis for local variables, object fields, and constructor results.
 - Taint-style source/sink/sanitizer analysis for user input, environment variables, file/network data, and external API responses.
-- Interprocedural dataflow summaries for validation, sanitization, formatting, publish, parse, and error-result behavior.
-- Program slicing over observable outputs such as return dataclasses, status fields, exceptions, logs, and external calls.
-- Control-dependence and guarded-return analysis to connect conditions with specific constructors, effects, and failure paths.
-- Abstract-interpretation-style domains for nullness, emptiness, sign/range, string length, collection size, and enum-like state.
-- Typestate/protocol analysis for order-sensitive APIs such as authenticate-before-publish, validate-before-use, open-before-read/write, and parse-before-field-access.
+- Interprocedural dataflow summary expansion for validation, sanitization,
+  formatting, publish, parse, and error-result behavior. An initial field-flow
+  summary and observable-slice layer is implemented.
+- Expand program slicing beyond the initial observable-output, external-call,
+  and control-dependence slices, especially for logs, exception values, and
+  branch-specific outputs.
+- Refine control-dependence and guarded-return analysis to connect conditions
+  with specific constructors, effects, and failure paths.
+- Expand abstract-interpretation-style domains beyond the initial nullness,
+  emptiness, string-length, and status candidates, especially sign/range,
+  collection size, and enum-like state.
+- Expand typestate/protocol analysis beyond the initial event-order candidates,
+  especially parse-before-field-access, open-before-read/write, transaction
+  begin/commit/rollback, and async resource protocols.
 - Effect and purity summaries to distinguish pure transformations from network, filesystem, environment, clock, randomness, or exception effects.
 - Dead/unreachable relation candidates such as unused required fields, never-constructed dataclasses, impossible branches, and unobserved result fields.

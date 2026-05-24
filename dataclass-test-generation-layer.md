@@ -17,6 +17,24 @@ roles, method-level transformation behavior, and field-level influence.
 The current implementation now also derives conservative semantic candidates
 from composed field flow, literal constructor values, string composition, and
 numeric bounds.
+It also derives an interprocedural dataflow layer: resolved call targets,
+call-parameter bindings, per-function input-to-output field summaries,
+callsite-aware local field flow, recursive composition across dataclass
+boundaries, and observable output slices that can drive one-layer-higher
+generated tests.
+On top of that, the semantic layer now emits conservative slicing,
+abstract-state, and protocol-order candidates: backward output slices,
+external-call field slices, control-dependence slices, nullness/emptiness/string
+length/status states, nullable-use-before-guard candidates, and
+validate/authenticate-before-publish style typestate obligations.
+
+The extractor is still incomplete relative to Python's full `ast` grammar, but
+it now captures several common surfaces outside direct dataclass transformations:
+local aliases, loop/comprehension iteration, assertions, context managers,
+await/yield expressions, pattern matching, and subscript access. Future
+extractor work should keep prioritizing AST nodes that unlock semantic
+obligations or better oracles, rather than adding every syntax node as an
+isolated structural fact.
 
 ## Goal
 
@@ -28,6 +46,11 @@ Examples:
 - A required field is never read after construction.
 - An optional field is read before a guard.
 - A frozen dataclass contains a mutable field such as `list`.
+- A dataclass option implies behavior that should be tested: `kw_only=True`
+  changes constructor call shape, `order=True` creates ordering methods,
+  `eq=False` removes value equality, `unsafe_hash=True` creates hashing risks,
+  `match_args=False` affects pattern matching, and `slots=True` changes
+  attribute layout.
 - A class method transforms one dataclass into another while reading only a
   subset of required fields.
 - A subclass overrides a method that transforms the same input dataclass into a
@@ -37,6 +60,10 @@ Examples:
 - A status/result dataclass is constructed with explicit boolean literals.
 - A comparison or slice bound implies boundary cases such as `bound - 1`,
   `bound`, and `bound + 1`.
+- A loop or comprehension iterates over a dataclass collection field.
+- An assertion or pattern-match guard reads a dataclass field.
+- An async function awaits an external result that may need status/error tests.
+- A generator yields values derived from a dataclass field.
 
 ## Current facts already useful for this
 
@@ -45,6 +72,7 @@ The extractor already emits enough facts for a first version:
 - `defines_class(Module, ClassName)`
 - `extends(Module, ClassName, BaseName)`
 - `dataclass(Module, ClassName, IsFrozen, LineNumber)`
+- `dataclass_option(Module, ClassName, OptionName, OptionValue, IsExplicit)`
 - `dataclass_field(Module, ClassName, FieldName, TypeRepr, IsOptional, HasDefault, DefaultKind, Position, LineNumber)`
 - `dataclass_field_default_factory(Module, ClassName, FieldName, FactoryName)`
 - `dataclass_field_type_ref(Module, ClassName, FieldName, TypeRef)`
@@ -54,6 +82,16 @@ The extractor already emits enough facts for a first version:
 - `returns_dataclass(Module, QualifiedName, ClassName, LineNumber)`
 - `attribute_read(Module, QualifiedName, OwnerName, AttributeName, LineNumber)`
 - `attribute_write(Module, QualifiedName, OwnerName, AttributeName, LineNumber)`
+- `local_alias(Module, QualifiedName, LocalName, TargetName, LineNumber)`
+- `loop_iterates(Module, QualifiedName, TargetName, IterExpr, LineNumber)`
+- `comprehension_iterates(Module, QualifiedName, TargetName, IterExpr, LineNumber)`
+- `assertion(Module, QualifiedName, TestExpr, LineNumber)`
+- `with_resource(Module, QualifiedName, ContextExpr, OptionalName, LineNumber)`
+- `await_expr(Module, QualifiedName, AwaitedExpr, LineNumber)`
+- `yield_value(Module, QualifiedName, ValueExpr, LineNumber)`
+- `match_subject(Module, QualifiedName, SubjectExpr, LineNumber)`
+- `match_case(Module, QualifiedName, PatternKind, GuardExpr, LineNumber)`
+- `subscript_access(Module, QualifiedName, OwnerExpr, IndexKind, LineNumber)`
 - `calls(Module, QualifiedName, CalleeName, LineNumber)`
 - `instantiates(Module, QualifiedName, ClassName, LineNumber)`
 - `function_name(Module, QualifiedName, Name)`
@@ -137,13 +175,19 @@ subset:
 - required field mappings with string/list observability assertions
 - optional field passthrough mappings with exact `None`, empty-string, and
   non-empty value checks
+- helper boundary tests for simple string-length helper methods
+- common-AST collection-iteration tests when the iterated value is observable
+- interprocedural observable-slice tests for public method paths with simple
+  string-output oracles
 
 It deliberately reports lower-confidence candidates instead of executing them:
 
 - publish methods and other effectful paths
 - private helper methods where the user-facing contract is unclear
-- branch-only facts where the condition is known but branch-specific return
-  behavior is not yet modeled
+- branch/control-dependence facts where the condition is known but the
+  branch-specific oracle is not yet strong enough
+- slicing, nullable-use, abstract-state, and protocol candidates that need
+  review or a stronger harness before becoming executable tests
 - lossy required-field candidates
 - non-string/list target fields without a reliable assertion template
 
@@ -300,9 +344,11 @@ Suggested interaction kinds:
 - `validates`: a method returns an error/result dataclass based on input field checks.
 - `publishes`: a method consumes a dataclass and performs network effects.
 
-The first four are implemented in generic form. `validates` and similar
-guarded-return properties still need branch-local return and control-dependence
-facts to reduce false positives.
+The first four are implemented in generic form. Initial `validates` and
+`publishes` candidates are also available through line-order
+control-dependence slices and protocol-event facts, but branch-local return and
+CFG/path-sensitive control-dependence are still needed to reduce false
+positives.
 
 ## Semantic facts now implemented
 
@@ -323,6 +369,15 @@ It emits:
 - `helper_boundary_behavior`: helper input-parameter to return behavior for
   simple private helper truncation/length boundaries.
 - `numeric_bound_conflict_candidate`: inconsistent inclusive lower/upper-bound candidates.
+- `call_parameter_binding`: resolved caller argument to callee parameter bindings.
+- `interprocedural_local_field_flow`: field influence through assigned call results.
+- `interprocedural_method_transform`: method-level source/target dataclass transforms inferred from summaries.
+- `backward_output_slice` and `function_backward_slice`: reverse views from outputs to source fields.
+- `external_call_field_slice`: source dataclass fields that influence call arguments.
+- `control_dependence_slice`: condition atoms that guard returned dataclasses, exceptions, or protocol events by line order.
+- `abstract_value_state` and `abstract_numeric_state`: small abstract-state candidates for nullness, emptiness, string length, and status literals.
+- `nullable_use_before_guard_candidate`: optional field reads without an obvious prior guard or validation event.
+- `typestate_transition`, `protocol_obligation_candidate`, and `typestate_protocol_violation`: event-order candidates for workflows such as validate/authenticate-before-publish and open-before-close.
 
 These relations are intentionally conservative. They are meant to generate
 candidate properties and tests, not to prove runtime behavior.
@@ -341,6 +396,15 @@ The extractor now emits these test-generation facts:
 - `method_override(Module, ClassName, BaseName, MethodName, QualifiedName)`
 - `local_depends_on_field(Module, QualifiedName, LocalName, SourceParam, SourceField, LineNumber)`
 - `call_result_assigned(Module, QualifiedName, LocalName, CalleeName, LineNumber)`
+- `call_target(Module, QualifiedName, CalleeName, CalleeModule, CalleeQualifiedName, CallKind, LineNumber)`
+- `call_argument(Module, QualifiedName, CalleeName, ArgPosition, ArgName, SourceExpr, LineNumber)`
+- `call_protocol_event(Module, QualifiedName, ReceiverExpr, EventKind, CalleeName, LineNumber)`
+- `branch_condition(Module, QualifiedName, ConditionExpr, LineNumber)`
+- `condition_atom(Module, QualifiedName, AtomExpr, AtomState, LineNumber)`
+- `return_call(Module, QualifiedName, CalleeName, LineNumber)`
+- `resolved_return_call(Module, QualifiedName, CalleeModule, CalleeQualifiedName, LineNumber)`
+- `return_local(Module, QualifiedName, LocalName, LineNumber)`
+- `resolved_call_result_assigned(Module, QualifiedName, LocalName, CalleeModule, CalleeQualifiedName, LineNumber)`
 - `local_dataclass_value(Module, QualifiedName, LocalName, ClassName, LineNumber)`
 - `literal_assigned(Module, QualifiedName, LocalName, LiteralKind, LiteralValue, LineNumber)`
 - `constructor_arg_literal(Module, QualifiedName, ConstructedClass, ArgName, LiteralKind, LiteralValue, LineNumber)`
@@ -361,9 +425,10 @@ These are sufficient for a first generic test-target model in
 
 Useful next upgrades:
 
-- more precise call-boundary flow summaries so arbitrary call results do not over-approximate downstream constructor arguments
+- higher-precision call-boundary flow summaries for callbacks, generic containers, and dynamically selected functions
 - branch-local return facts that connect a condition to a specific returned constructor
-- CFG/control-dependence facts for validation and guarded-effect reasoning
+- CFG/control-dependence facts beyond current line-order slices for validation
+  and guarded-effect reasoning
 - lightweight alias/points-to summaries for local variables and object fields
 
 The most important implemented fact is `field_flows_to_constructor_arg`. It
@@ -434,9 +499,9 @@ too strong. The report should preserve that distinction.
 
 ## Bottom line
 
-The next step should not be more generic dataflow. It should be a
-class/dataclass interaction and semantic model that preserves enough structure
-to generate tests:
+The next step should not be more undifferentiated dataflow. It should be
+turning the new semantic candidates into stronger oracles and reports while
+preserving enough structure to generate tests:
 
 ```text
 class role
@@ -446,5 +511,8 @@ class role
 + inheritance/override contracts
 + semantic field flow
 + literal and numeric bounds
++ interprocedural slices
++ abstract states
++ protocol obligations
 = useful test targets
 ```
