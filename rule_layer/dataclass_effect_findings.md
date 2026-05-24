@@ -10,7 +10,7 @@ call behavior.
 
 ## Souffle program
 
-The generic program is `rule_layer/dataclass_effect_model.dl`.
+The generic program is `souffle_static_analysis/dataclass_effect_model.dl`.
 
 It uses Souffle record types:
 
@@ -24,7 +24,7 @@ It uses Souffle record types:
 python3 tools/python_to_souffle.py <python-project-dir> --souffle-facts-dir /tmp/project-facts
 mkdir -p /tmp/project-effect-out
 souffle -F /tmp/project-facts -D /tmp/project-effect-out \
-  rule_layer/dataclass_effect_model.dl
+  souffle_static_analysis/dataclass_effect_model.dl
 ```
 
 Useful output files:

@@ -1,12 +1,12 @@
 # CutePetsBoston Semantic Rules
 
 This file records project-specific interpretations of the generic semantic
-model in `rule_layer/semantic_model.dl`.
+model in `souffle_static_analysis/semantic_model.dl`.
 
 Generated with:
 
 ```bash
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-slicing-ai-check
+python3 tools/run_static_analysis.py CutePetsBoston --engine souffle --work-dir /tmp/sps-slicing-ai-check
 ```
 
 ## Current semantic summary

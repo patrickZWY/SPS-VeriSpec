@@ -168,8 +168,8 @@ python3 tools/generate_pytest_from_properties.py \
 ```
 
 It reads the `facts/` and `test_out/` directories produced by
-`tools/run_souffle_models.py`. It currently emits a conservative executable
-subset:
+`tools/run_static_analysis.py --engine souffle`. It currently emits a
+conservative executable subset:
 
 - public `format*` methods that transform one dataclass into another
 - required field mappings with string/list observability assertions
@@ -352,7 +352,7 @@ positives.
 
 ## Semantic facts now implemented
 
-The generic semantic model is `rule_layer/semantic_model.dl`.
+The generic semantic model is `souffle_static_analysis/semantic_model.dl`.
 
 It emits:
 
@@ -418,8 +418,8 @@ The extractor now emits these test-generation facts:
 - `string_slice_upper_bound(Module, QualifiedName, Expression, UpperBound, LineNumber)`
 
 These are sufficient for a first generic test-target model in
-`rule_layer/dataclass_test_model.dl` and the first semantic model in
-`rule_layer/semantic_model.dl`.
+`souffle_static_analysis/dataclass_test_model.dl` and the first semantic model in
+`souffle_static_analysis/semantic_model.dl`.
 
 ## Remaining extractor upgrades
 
@@ -485,17 +485,17 @@ too strong. The report should preserve that distinction.
 - Extend Hypothesis/property-based generation beyond the current transform
   properties into dataclass schemas, optional field combinations, numeric
   bounds, string bounds, and contract families.
-- Mutation-testing experiments inspired by *The Fuzzing Book*: mutate program
-  statements, dataclass defaults, field mappings, branch predicates, or
-  generated inputs, then measure whether property-derived tests detect the
-  change.
+- Mutation testing is implemented for relation-guided field mappings,
+  collection iteration, interprocedural pipeline stages, and solver-adjacent
+  boundary changes. Future operators should cover dataclass defaults, branch
+  predicates, generated inputs, and richer public boundary behavior.
 - Concolic testing with SAT/SMT solvers: execute concrete paths, collect path
   constraints from branch and boundary facts, then solve for inputs that reach
   uncovered or suspicious paths.
 - Extend evaluation statistics beyond current source-line coverage,
-  relation-to-test yield, and coverage deltas: branch coverage, dataclass-field
-  coverage, derived-relation coverage, contract-family coverage, and mutation
-  score.
+  relation-to-test yield, coverage deltas, and mutation score: branch coverage,
+  dataclass-field coverage, derived-relation coverage, contract-family
+  coverage, and oracle-strength reporting.
 
 ## Bottom line
 

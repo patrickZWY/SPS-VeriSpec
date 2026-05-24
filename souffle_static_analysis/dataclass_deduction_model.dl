@@ -1,0 +1,278 @@
+// Generic Souffle program that deduces higher-level relationships from the
+// dataclass schema and dataclass effect layers.
+//
+// Generate facts with:
+// python3 tools/python_to_souffle.py <python-project> --souffle-facts-dir /tmp/project-facts
+//
+// Then run:
+// mkdir -p /tmp/project-deduction-out
+// souffle -F /tmp/project-facts -D /tmp/project-deduction-out souffle_static_analysis/dataclass_deduction_model.dl
+
+.include "souffle_static_analysis/base_facts.dl"
+
+.decl function_dataclass(
+  function_module:symbol,
+  qualified_name:symbol,
+  dataclass_module:symbol,
+  class_name:symbol,
+  relation_kind:symbol,
+  evidence:symbol
+)
+.output function_dataclass
+
+.decl field_use_in_function(
+  function_module:symbol,
+  qualified_name:symbol,
+  dataclass_module:symbol,
+  class_name:symbol,
+  field_name:symbol,
+  access_kind:symbol,
+  line:number
+)
+.output field_use_in_function
+
+.decl inferred_local_dataclass_read(
+  function_module:symbol,
+  qualified_name:symbol,
+  dataclass_module:symbol,
+  class_name:symbol,
+  local_name:symbol,
+  field_name:symbol,
+  line:number
+)
+.output inferred_local_dataclass_read
+
+.decl dataclass_transform(
+  function_module:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  target_module:symbol,
+  target_class:symbol
+)
+.output dataclass_transform
+
+.decl reachable_dataclass_transform(
+  source_module:symbol,
+  source_class:symbol,
+  target_module:symbol,
+  target_class:symbol
+)
+.output reachable_dataclass_transform
+
+.decl bridge_dataclass(dataclass_module:symbol, class_name:symbol)
+.output bridge_dataclass
+
+.decl entry_dataclass(dataclass_module:symbol, class_name:symbol)
+.output entry_dataclass
+
+.decl terminal_dataclass(dataclass_module:symbol, class_name:symbol)
+.output terminal_dataclass
+
+.decl field_to_dataclass_transform(
+  source_module:symbol,
+  source_class:symbol,
+  field_name:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  qualified_name:symbol
+)
+.output field_to_dataclass_transform
+
+.decl unread_required_field(dataclass_module:symbol, class_name:symbol, field_name:symbol)
+.output unread_required_field
+
+.decl effectful_dataclass(dataclass_module:symbol, class_name:symbol, effect_kind:symbol)
+.output effectful_dataclass
+
+.decl function_call_edge(
+  caller_module:symbol,
+  caller_qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  line:number
+)
+.output function_call_edge
+
+.decl reachable_function_call(
+  caller_module:symbol,
+  caller_qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol
+)
+.output reachable_function_call
+
+.decl interprocedural_function_dataclass(
+  function_module:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  dataclass_module:symbol,
+  class_name:symbol,
+  relation_kind:symbol,
+  evidence:symbol
+)
+.output interprocedural_function_dataclass
+
+.decl interprocedural_field_use_in_function(
+  function_module:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  dataclass_module:symbol,
+  class_name:symbol,
+  field_name:symbol,
+  access_kind:symbol
+)
+.output interprocedural_field_use_in_function
+
+.decl interprocedural_dataclass_transform(
+  function_module:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  target_module:symbol,
+  target_class:symbol
+)
+.output interprocedural_dataclass_transform
+
+function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, "param_type", ParamName) :-
+  resolved_param_type_ref(FunctionModule, QualifiedName, ParamName, DataclassModule, Class),
+  dataclass(DataclassModule, Class, _, _).
+
+function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, "return_type", Class) :-
+  resolved_return_type_ref(FunctionModule, QualifiedName, DataclassModule, Class),
+  dataclass(DataclassModule, Class, _, _).
+
+function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, "returns_constructor", Class) :-
+  resolved_returns_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, _),
+  dataclass(DataclassModule, Class, _, _).
+
+function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, "constructs", Class) :-
+  resolved_instantiates(FunctionModule, QualifiedName, DataclassModule, Class, _),
+  dataclass(DataclassModule, Class, _, _).
+
+field_use_in_function(FunctionModule, QualifiedName, DataclassModule, Class, FieldName, "read", Line) :-
+  resolved_param_type_ref(FunctionModule, QualifiedName, ParamName, DataclassModule, Class),
+  dataclass_field(DataclassModule, Class, FieldName, _, _, _, _, _, _),
+  attribute_read(FunctionModule, QualifiedName, ParamName, FieldName, Line).
+
+field_use_in_function(FunctionModule, QualifiedName, DataclassModule, Class, FieldName, "write", Line) :-
+  resolved_param_type_ref(FunctionModule, QualifiedName, ParamName, DataclassModule, Class),
+  dataclass_field(DataclassModule, Class, FieldName, _, _, _, _, _, _),
+  attribute_write(FunctionModule, QualifiedName, ParamName, FieldName, Line).
+
+field_use_in_function(FunctionModule, QualifiedName, DataclassModule, Class, FieldName, "read", Line) :-
+  resolved_local_dataclass_value(FunctionModule, QualifiedName, LocalName, DataclassModule, Class, _),
+  dataclass_field(DataclassModule, Class, FieldName, _, _, _, _, _, _),
+  attribute_read(FunctionModule, QualifiedName, LocalName, FieldName, Line).
+
+field_use_in_function(FunctionModule, QualifiedName, DataclassModule, Class, FieldName, "read", Line) :-
+  inferred_local_dataclass_read(FunctionModule, QualifiedName, DataclassModule, Class, _, FieldName, Line).
+
+inferred_local_dataclass_read(FunctionModule, QualifiedName, DataclassModule, Class, LocalName, FieldName, Line) :-
+  call_result_assigned(FunctionModule, QualifiedName, LocalName, CalleeName, _),
+  function_name(TargetModule, TargetQualifiedName, CalleeName),
+  resolved_return_type_ref(TargetModule, TargetQualifiedName, DataclassModule, Class),
+  dataclass_field(DataclassModule, Class, FieldName, _, _, _, _, _, _),
+  attribute_read(FunctionModule, QualifiedName, LocalName, FieldName, Line).
+
+dataclass_transform(FunctionModule, QualifiedName, SourceModule, SourceClass, TargetModule, TargetClass) :-
+  resolved_param_type_ref(FunctionModule, QualifiedName, _, SourceModule, SourceClass),
+  resolved_return_type_ref(FunctionModule, QualifiedName, TargetModule, TargetClass),
+  dataclass(SourceModule, SourceClass, _, _),
+  dataclass(TargetModule, TargetClass, _, _),
+  SourceModule != TargetModule.
+
+dataclass_transform(FunctionModule, QualifiedName, SourceModule, SourceClass, TargetModule, TargetClass) :-
+  resolved_param_type_ref(FunctionModule, QualifiedName, _, SourceModule, SourceClass),
+  resolved_return_type_ref(FunctionModule, QualifiedName, TargetModule, TargetClass),
+  dataclass(SourceModule, SourceClass, _, _),
+  dataclass(TargetModule, TargetClass, _, _),
+  SourceModule = TargetModule,
+  SourceClass != TargetClass.
+
+dataclass_transform(FunctionModule, QualifiedName, SourceModule, SourceClass, TargetModule, TargetClass) :-
+  resolved_param_type_ref(FunctionModule, QualifiedName, _, SourceModule, SourceClass),
+  resolved_returns_dataclass(FunctionModule, QualifiedName, TargetModule, TargetClass, _),
+  dataclass(SourceModule, SourceClass, _, _),
+  dataclass(TargetModule, TargetClass, _, _),
+  SourceModule != TargetModule.
+
+dataclass_transform(FunctionModule, QualifiedName, SourceModule, SourceClass, TargetModule, TargetClass) :-
+  resolved_param_type_ref(FunctionModule, QualifiedName, _, SourceModule, SourceClass),
+  resolved_returns_dataclass(FunctionModule, QualifiedName, TargetModule, TargetClass, _),
+  dataclass(SourceModule, SourceClass, _, _),
+  dataclass(TargetModule, TargetClass, _, _),
+  SourceModule = TargetModule,
+  SourceClass != TargetClass.
+
+reachable_dataclass_transform(SourceModule, SourceClass, TargetModule, TargetClass) :-
+  dataclass_transform(_, _, SourceModule, SourceClass, TargetModule, TargetClass).
+
+reachable_dataclass_transform(SourceModule, SourceClass, TargetModule, TargetClass) :-
+  dataclass_transform(_, _, SourceModule, SourceClass, MidModule, MidClass),
+  reachable_dataclass_transform(MidModule, MidClass, TargetModule, TargetClass).
+
+bridge_dataclass(DataclassModule, Class) :-
+  dataclass_transform(_, _, DataclassModule, Class, _, _),
+  dataclass_transform(_, _, _, _, DataclassModule, Class).
+
+entry_dataclass(DataclassModule, Class) :-
+  dataclass(DataclassModule, Class, _, _),
+  !dataclass_transform(_, _, _, _, DataclassModule, Class).
+
+terminal_dataclass(DataclassModule, Class) :-
+  dataclass(DataclassModule, Class, _, _),
+  !dataclass_transform(_, _, DataclassModule, Class, _, _).
+
+field_to_dataclass_transform(SourceModule, SourceClass, FieldName, TargetModule, TargetClass, QualifiedName) :-
+  field_use_in_function(_, QualifiedName, SourceModule, SourceClass, FieldName, "read", _),
+  dataclass_transform(_, QualifiedName, SourceModule, SourceClass, TargetModule, TargetClass).
+
+unread_required_field(DataclassModule, Class, FieldName) :-
+  dataclass_field(DataclassModule, Class, FieldName, _, 0, 0, _, _, _),
+  !field_use_in_function(_, _, DataclassModule, Class, FieldName, "read", _).
+
+effectful_dataclass(DataclassModule, Class, "call") :-
+  function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, _, _),
+  calls(FunctionModule, QualifiedName, _, _).
+
+effectful_dataclass(DataclassModule, Class, "env_read") :-
+  function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, _, _),
+  reads_env_var(FunctionModule, QualifiedName, _, _).
+
+effectful_dataclass(DataclassModule, Class, "handles_exception") :-
+  function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, _, _),
+  handles_exception(FunctionModule, QualifiedName, _, _).
+
+effectful_dataclass(DataclassModule, Class, "raises_exception") :-
+  function_dataclass(FunctionModule, QualifiedName, DataclassModule, Class, _, _),
+  raises_exception(FunctionModule, QualifiedName, _, _).
+
+function_call_edge(CM, CQ, TM, TQ, Line) :-
+  call_target(CM, CQ, _, TM, TQ, _, Line).
+
+reachable_function_call(CM, CQ, TM, TQ) :-
+  function_call_edge(CM, CQ, TM, TQ, _).
+
+reachable_function_call(CM, CQ, TM, TQ) :-
+  function_call_edge(CM, CQ, MidModule, MidQ, _),
+  reachable_function_call(MidModule, MidQ, TM, TQ).
+
+interprocedural_function_dataclass(FunctionModule, QualifiedName, CalleeModule, CalleeQ, DataclassModule, Class, RelationKind, Evidence) :-
+  function_dataclass(FunctionModule, QualifiedName, _, _, _, _),
+  reachable_function_call(FunctionModule, QualifiedName, CalleeModule, CalleeQ),
+  function_dataclass(CalleeModule, CalleeQ, DataclassModule, Class, RelationKind, Evidence).
+
+interprocedural_field_use_in_function(FunctionModule, QualifiedName, CalleeModule, CalleeQ, DataclassModule, Class, FieldName, AccessKind) :-
+  function_dataclass(FunctionModule, QualifiedName, _, _, _, _),
+  reachable_function_call(FunctionModule, QualifiedName, CalleeModule, CalleeQ),
+  field_use_in_function(CalleeModule, CalleeQ, DataclassModule, Class, FieldName, AccessKind, _).
+
+interprocedural_dataclass_transform(FunctionModule, QualifiedName, CalleeModule, CalleeQ, SourceModule, SourceClass, TargetModule, TargetClass) :-
+  function_dataclass(FunctionModule, QualifiedName, _, _, _, _),
+  reachable_function_call(FunctionModule, QualifiedName, CalleeModule, CalleeQ),
+  dataclass_transform(CalleeModule, CalleeQ, SourceModule, SourceClass, TargetModule, TargetClass).

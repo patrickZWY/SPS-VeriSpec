@@ -37,9 +37,10 @@ class SemanticModelSouffleTests(unittest.TestCase):
                 str(facts_dir),
                 "-D",
                 str(out_dir),
-                str(ROOT / "rule_layer" / "semantic_model.dl"),
+                str(ROOT / "souffle_static_analysis" / "semantic_model.dl"),
             ],
             check=True,
+            cwd=ROOT,
         )
         return out_dir
 

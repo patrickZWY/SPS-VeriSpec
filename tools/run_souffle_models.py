@@ -11,18 +11,22 @@ from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 EXTRACTOR = ROOT / "tools" / "python_to_souffle.py"
+SOUFFLE_ANALYSIS_DIR = ROOT / "souffle_static_analysis"
 MODELS = {
-    "schema": ROOT / "rule_layer" / "dataclass_schema_model.dl",
-    "effect": ROOT / "rule_layer" / "dataclass_effect_model.dl",
-    "deduction": ROOT / "rule_layer" / "dataclass_deduction_model.dl",
-    "test": ROOT / "rule_layer" / "dataclass_test_model.dl",
-    "semantic": ROOT / "rule_layer" / "semantic_model.dl",
+    "schema": SOUFFLE_ANALYSIS_DIR / "dataclass_schema_model.dl",
+    "effect": SOUFFLE_ANALYSIS_DIR / "dataclass_effect_model.dl",
+    "deduction": SOUFFLE_ANALYSIS_DIR / "dataclass_deduction_model.dl",
+    "test": SOUFFLE_ANALYSIS_DIR / "dataclass_test_model.dl",
+    "semantic": SOUFFLE_ANALYSIS_DIR / "semantic_model.dl",
 }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the generic Souffle dataclass models and write a summary report."
+        description=(
+            "Compatibility wrapper for the Souffle static-analysis backend. "
+            "Prefer tools/run_static_analysis.py --engine souffle for new runs."
+        )
     )
     parser.add_argument("project_root", help="Path to the Python project to analyze.")
     parser.add_argument(
@@ -39,7 +43,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_command(cmd: list[str]) -> None:
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, cwd=ROOT)
 
 
 def read_tsv_rows(path: Path) -> list[list[str]]:

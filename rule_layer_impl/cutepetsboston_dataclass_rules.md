@@ -8,7 +8,7 @@ results, and Mastodon preview pipeline values.
 Generated with:
 
 ```bash
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-slicing-ai-check
+python3 tools/run_static_analysis.py CutePetsBoston --engine souffle --work-dir /tmp/sps-slicing-ai-check
 ```
 
 ## Domain inventory

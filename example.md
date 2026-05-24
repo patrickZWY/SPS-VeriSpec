@@ -1,5 +1,11 @@
 # Current workflow
 
+For a full agent-run evaluation of any target project, follow the protocol in
+`README.md`: run the Python fact baseline, run the Souffle backend, attempt test
+generation, validate generated tests, produce coverage/evaluation reports with
+visualizations, run mutation evaluation when applicable, and report all artifact
+paths and blockers to the user.
+
 1. Begin with a Python project such as `CutePetsBoston`.
 
 2. Extract Python AST facts with `tools/python_to_souffle.py`.
@@ -25,16 +31,23 @@ The extractor now emits facts for:
 
 The current reusable models are:
 
-- `rule_layer/dataclass_schema_model.dl`
-- `rule_layer/dataclass_effect_model.dl`
-- `rule_layer/dataclass_deduction_model.dl`
-- `rule_layer/dataclass_test_model.dl`
-- `rule_layer/semantic_model.dl`
+- `souffle_static_analysis/dataclass_schema_model.dl`
+- `souffle_static_analysis/dataclass_effect_model.dl`
+- `souffle_static_analysis/dataclass_deduction_model.dl`
+- `souffle_static_analysis/dataclass_test_model.dl`
+- `souffle_static_analysis/semantic_model.dl`
 
 The one-command workflow is:
 
 ```bash
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-analysis-run
+python3 tools/run_static_analysis.py CutePetsBoston --engine souffle --work-dir /tmp/sps-analysis-run
+```
+
+To run only the Python extractor/fact-inventory baseline, without Souffle
+derivations:
+
+```bash
+python3 tools/run_static_analysis.py CutePetsBoston --engine python --work-dir /tmp/sps-python-run
 ```
 
 4. Review derived relationships.
@@ -293,8 +306,9 @@ For the local CutePetsBoston checkout used during development:
 9. Run mutation evaluation.
 
 The mutation runner creates a temporary copy of the target checkout, applies
-small relation-guided transform mutants and solver-adjacent boundary mutants,
-then compares handwritten, generated, and combined mutation scores.
+small relation-guided transform mutants, common-AST collection-iteration
+mutants, interprocedural pipeline mutants, and solver-adjacent boundary
+mutants, then compares handwritten, generated, and combined mutation scores.
 
 ```bash
 python3 tools/mutation_eval.py \
@@ -364,7 +378,7 @@ Priority next steps:
   reject, or refine that relation. Persist the decision so accepted relations
   feed the next analysis round and rejected ones are demoted. This is the
   minimum feedback path that turns the current one-way `facts -> rules ->
-  tests` pipeline into the iterative loop described in `motivation.md`.
+  tests` pipeline into an iterative analysis loop.
 
 - Investigate: are we actually utilizing Datalog's ability to deduce facts
   by repeatedly applying rules? Do the rules we have so far and the facts
@@ -411,9 +425,9 @@ Priority next steps:
   output behavior. Dataclass collection iteration has an initial executable
   template when the iterated value is observable in the return value.
 - Feed generated-test pass/fail/skip results back into the knowledge base.
-- Expand mutation testing beyond the current relation-guided transform and
-  solver-adjacent boundary mutants, including generated-input mutation and
-  branch-condition mutation.
+- Expand mutation testing beyond the current relation-guided transform,
+  collection-iteration, interprocedural pipeline, and solver-adjacent boundary
+  mutants, including generated-input mutation and branch-condition mutation.
 - Expand abstract-interpretation domains beyond the initial nullness,
   emptiness, string-length, and success/failure candidates, especially
   collection size, sign/range, and enum-like state.
@@ -458,9 +472,10 @@ validate those properties with concrete generated tests.
 - Effect and purity summaries: distinguish pure dataclass transformations from
   functions with network, filesystem, environment, clock, randomness, mutation,
   or exception effects.
-- Dead-code and dead-data candidates: surface never-constructed dataclasses,
-  unread required fields, unobserved result fields, impossible branches,
-  unused constructor arguments, and transformations whose outputs are ignored.
+- Dead-code and dead-data candidates: unread required-field candidates are
+  implemented. Broader work should surface never-constructed dataclasses,
+  unobserved result fields, impossible branches, unused constructor arguments,
+  and transformations whose outputs are ignored.
 - Contract conformance analysis: compare subclasses or implementations of the
   same abstract method for accepted dataclasses, returned dataclasses,
   success/failure shapes, required-field observability, and effect profiles.
@@ -499,10 +514,9 @@ by prior tools and analysis traditions:
   are the direct inspiration for expressing static analyses as Datalog rules.
 - The Souffle documentation on [input/output execution](https://www.souffle-lang.com/execute)
   is the basis for the `.facts` and `.csv` workflow used by
-  `tools/python_to_souffle.py` and `tools/run_souffle_models.py`.
+  `tools/python_to_souffle.py` and `tools/run_static_analysis.py --engine souffle`.
 - The official Souffle [examples](https://souffle-lang.github.io/examples)
-  are referenced in `motivation.md` as examples of static analysis with
-  Datalog, including pointer/alias-style analyses.
+  show static analysis with Datalog, including pointer/alias-style analyses.
 - [Doop](https://github.com/plast-lab/doop), a declarative pointer and taint
   analysis framework that targets Souffle, is a useful reference point for
   larger-scale Datalog-based program analysis.
@@ -528,28 +542,27 @@ by prior tools and analysis traditions:
   stronger generated tests.
 - The Teleport article
   [Using Datalog to Test for Access](https://goteleport.com/blog/testing-access-datalog/)
-  is cited in `motivation.md` as an example of using Datalog to answer concrete
-  configuration/access questions.
+  is an example of using Datalog to answer concrete configuration/access
+  questions.
 - Michelin's
   [An Introduction to Datalog](https://blogit.michelin.io/an-introduction-to-datalog/)
-  is cited in `motivation.md` as a practical data-modeling reference for
-  Datalog-style relational thinking.
+  is a practical data-modeling reference for Datalog-style relational thinking.
 - Norbert Wojtowicz's talk
   [Domain Modeling With Datalog](https://www.rubyevents.org/talks/domain-modeling-with-datalog)
-  is cited in `motivation.md` and is useful background for entity/attribute/value
-  modeling, evolving relationships, and Datalog as a domain-modeling tool. The
-  direct video link is [YouTube: Domain modeling with Datalog](https://youtu.be/oo-7mN9WXTw).
-- [Rosette](https://docs.racket-lang.org/rosette-guide/index.html) is cited in
-  `motivation.md` as a nearby solver-aided programming reference point.
-- The Cloudflare/Racket/Rosette reference in `motivation.md` corresponds to
+  is useful background for entity/attribute/value modeling, evolving
+  relationships, and Datalog as a domain-modeling tool. The direct video link
+  is [YouTube: Domain modeling with Datalog](https://youtu.be/oo-7mN9WXTw).
+- [Rosette](https://docs.racket-lang.org/rosette-guide/index.html) is a nearby
+  solver-aided programming reference point.
+- The Cloudflare/Racket/Rosette reference corresponds to
   [How Cloudflare Uses Racket and Rosette to Verify DNS Changes](https://racket.discourse.group/t/how-cloudflare-uses-racket-and-rosette-to-verify-dns-changes/3983),
   with the direct video at
   [YouTube: How Cloudflare Uses Racket and Rosette to Verify DNS Changes](https://youtu.be/7Twlh-Opq5E).
 - [TLA+](https://lamport.org/tla/tla.html), [Lean](https://lean-lang.org/),
   [Rocq/Coq](https://rocq-prover.org/), and [Dafny](https://dafny.org/) are
-  referenced in `motivation.md` as examples of stronger formal-specification
-  or proof-oriented tooling. This project is intentionally lighter-weight: it
-  tries to infer conservative testable properties from ordinary Python code.
+  examples of stronger formal-specification or proof-oriented tooling. This
+  project is intentionally lighter-weight: it tries to infer conservative
+  testable properties from ordinary Python code.
 - Dijkstra's observation that testing shows bug presence rather than absence is
-  quoted in `motivation.md`; one source traces it to
+  often used as context for testing tools; one source traces it to
   [Notes on Structured Programming, EWD249](https://libquotes.com/edsger-w-dijkstra/quote/lbn6u3f).

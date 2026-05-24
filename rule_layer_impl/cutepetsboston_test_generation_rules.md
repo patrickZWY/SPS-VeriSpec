@@ -6,13 +6,13 @@ generic dataclass test model and the generic semantic model.
 Generated with:
 
 ```bash
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-slicing-ai-check
+python3 tools/run_static_analysis.py CutePetsBoston --engine souffle --work-dir /tmp/sps-slicing-ai-check
 ```
 
 ## Model layers
 
-The generic model is `rule_layer/dataclass_test_model.dl`.
-The semantic model is `rule_layer/semantic_model.dl`.
+The generic model is `souffle_static_analysis/dataclass_test_model.dl`.
+The semantic model is `souffle_static_analysis/semantic_model.dl`.
 
 They derive test-oriented relations from:
 
@@ -98,7 +98,7 @@ repository can be shared without committing the full sample application. Given
 an analysis run such as:
 
 ```bash
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-analysis-run
+python3 tools/run_static_analysis.py CutePetsBoston --engine souffle --work-dir /tmp/sps-analysis-run
 ```
 
 generate portable pytest tests with:
@@ -164,11 +164,12 @@ control-dependence facts, or a more precise assertion oracle.
   contract conformance.
 - Add executable templates for selected slicing, nullable-use, and
   protocol-order candidates once their assertion oracles are strong enough.
-- Explore mutation testing inspired by *The Fuzzing Book* by mutating
-  dataclass mappings, branch conditions, and generated inputs, then measuring
-  whether generated tests detect the change.
+- Mutation testing is now available for relation-guided transform mappings,
+  common-AST collection iteration, interprocedural pipeline stages, and
+  solver-adjacent boundary changes. Branch-condition mutants and
+  generated-input mutants remain useful next extensions.
 - Explore concolic testing with SAT/SMT solvers to solve branch and boundary
   constraints instead of relying only on sampled examples.
-- Extend evaluation statistics beyond current line coverage and coverage deltas
-  into branch coverage, dataclass-field coverage, derived-relation coverage, and
-  mutation score.
+- Extend evaluation statistics beyond current line coverage, relation-yield,
+  coverage deltas, and mutation score into branch coverage, dataclass-field
+  coverage, derived-relation coverage, and oracle-strength reporting.

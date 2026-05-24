@@ -1,0 +1,368 @@
+// Generic Souffle model for deriving dataclass-centered test targets.
+//
+// Generate facts with:
+// python3 tools/python_to_souffle.py <python-project> --souffle-facts-dir /tmp/project-facts
+//
+// Then run:
+// mkdir -p /tmp/project-test-out
+// souffle -F /tmp/project-facts -D /tmp/project-test-out souffle_static_analysis/dataclass_test_model.dl
+
+.include "souffle_static_analysis/base_facts.dl"
+
+.decl mutable_dataclass(module_name:symbol, class_name:symbol)
+.output mutable_dataclass
+
+.decl frozen_dataclass(module_name:symbol, class_name:symbol)
+.output frozen_dataclass
+
+.decl ordered_dataclass(module_name:symbol, class_name:symbol)
+.output ordered_dataclass
+
+.decl comparable_dataclass(module_name:symbol, class_name:symbol)
+.output comparable_dataclass
+
+.decl kw_only_dataclass(module_name:symbol, class_name:symbol)
+.output kw_only_dataclass
+
+.decl slotted_dataclass(module_name:symbol, class_name:symbol)
+.output slotted_dataclass
+
+.decl unsafe_hash_dataclass(module_name:symbol, class_name:symbol)
+.output unsafe_hash_dataclass
+
+.decl optional_dataclass_field(module_name:symbol, class_name:symbol, field_name:symbol)
+.output optional_dataclass_field
+
+.decl required_dataclass_field(module_name:symbol, class_name:symbol, field_name:symbol)
+.output required_dataclass_field
+
+.decl mutable_default_factory_field(
+  module_name:symbol,
+  class_name:symbol,
+  field_name:symbol,
+  factory_name:symbol
+)
+.output mutable_default_factory_field
+
+.decl frozen_contains_mutable_field(
+  module_name:symbol,
+  class_name:symbol,
+  field_name:symbol,
+  factory_name:symbol
+)
+.output frozen_contains_mutable_field
+
+.decl class_method_uses_dataclass(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  dataclass_module:symbol,
+  dataclass_name:symbol,
+  role:symbol
+)
+.output class_method_uses_dataclass
+
+.decl method_dataclass_transform(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  target_module:symbol,
+  target_class:symbol
+)
+.output method_dataclass_transform
+
+.decl method_transform_reads_field(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  source_class:symbol,
+  field_name:symbol,
+  target_class:symbol
+)
+.output method_transform_reads_field
+
+.decl method_field_to_constructor_arg(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_class:symbol,
+  target_arg:symbol
+)
+.output method_field_to_constructor_arg
+
+.decl optional_field_read_in_condition(
+  module_name:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  dataclass_module:symbol,
+  dataclass_name:symbol,
+  field_name:symbol
+)
+.output optional_field_read_in_condition
+
+.decl transform_optional_field_test_target(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  source_class:symbol,
+  field_name:symbol,
+  target_class:symbol,
+  target_arg:symbol
+)
+.output transform_optional_field_test_target
+
+.decl transform_required_field_test_target(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  source_class:symbol,
+  field_name:symbol,
+  target_class:symbol,
+  target_arg:symbol
+)
+.output transform_required_field_test_target
+
+.decl override_dataclass_contract(
+  module_name:symbol,
+  class_name:symbol,
+  base_name:symbol,
+  method_name:symbol,
+  qualified_name:symbol,
+  dataclass_name:symbol,
+  role:symbol
+)
+.output override_dataclass_contract
+
+.decl method_returns_none_or_dataclass(
+  module_name:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  dataclass_name:symbol
+)
+.output method_returns_none_or_dataclass
+
+.decl function_call_edge(
+  caller_module:symbol,
+  caller_qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  line:number
+)
+.output function_call_edge
+
+.decl reachable_function_call(
+  caller_module:symbol,
+  caller_qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol
+)
+.output reachable_function_call
+
+.decl interprocedural_class_method_uses_dataclass(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  dataclass_module:symbol,
+  dataclass_name:symbol,
+  role:symbol
+)
+.output interprocedural_class_method_uses_dataclass
+
+.decl interprocedural_method_dataclass_transform(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  target_module:symbol,
+  target_class:symbol
+)
+.output interprocedural_method_dataclass_transform
+
+.decl interprocedural_method_field_to_constructor_arg(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_class:symbol,
+  target_arg:symbol
+)
+.output interprocedural_method_field_to_constructor_arg
+
+mutable_dataclass(M, C) :-
+  dataclass(M, C, 0, _).
+
+frozen_dataclass(M, C) :-
+  dataclass(M, C, 1, _).
+
+ordered_dataclass(M, C) :-
+  dataclass_option(M, C, "order", "true", _).
+
+comparable_dataclass(M, C) :-
+  dataclass_option(M, C, "eq", "true", _).
+
+kw_only_dataclass(M, C) :-
+  dataclass_option(M, C, "kw_only", "true", _).
+
+slotted_dataclass(M, C) :-
+  dataclass_option(M, C, "slots", "true", _).
+
+unsafe_hash_dataclass(M, C) :-
+  dataclass_option(M, C, "unsafe_hash", "true", _).
+
+optional_dataclass_field(M, C, F) :-
+  dataclass_field(M, C, F, _, 1, _, _, _, _).
+
+required_dataclass_field(M, C, F) :-
+  dataclass_field(M, C, F, _, 0, 0, _, _, _).
+
+mutable_default_factory_field(M, C, F, Factory) :-
+  dataclass_field_default_factory(M, C, F, Factory),
+  Factory = "list".
+
+mutable_default_factory_field(M, C, F, Factory) :-
+  dataclass_field_default_factory(M, C, F, Factory),
+  Factory = "dict".
+
+mutable_default_factory_field(M, C, F, Factory) :-
+  dataclass_field_default_factory(M, C, F, Factory),
+  Factory = "set".
+
+frozen_contains_mutable_field(M, C, F, Factory) :-
+  frozen_dataclass(M, C),
+  mutable_default_factory_field(M, C, F, Factory).
+
+class_method_uses_dataclass(CM, Class, Q, DM, D, "accepts") :-
+  method_of_class(CM, Class, Q),
+  resolved_param_type_ref(CM, Q, _, DM, D),
+  dataclass(DM, D, _, _).
+
+class_method_uses_dataclass(CM, Class, Q, DM, D, "returns") :-
+  method_of_class(CM, Class, Q),
+  resolved_return_type_ref(CM, Q, DM, D),
+  dataclass(DM, D, _, _).
+
+class_method_uses_dataclass(CM, Class, Q, DM, D, "constructs") :-
+  method_of_class(CM, Class, Q),
+  resolved_instantiates(CM, Q, DM, D, _),
+  dataclass(DM, D, _, _).
+
+method_dataclass_transform(CM, Class, Q, SM, Source, TM, Target) :-
+  method_of_class(CM, Class, Q),
+  resolved_param_type_ref(CM, Q, _, SM, Source),
+  resolved_return_type_ref(CM, Q, TM, Target),
+  dataclass(SM, Source, _, _),
+  dataclass(TM, Target, _, _),
+  SM != TM.
+
+method_dataclass_transform(CM, Class, Q, SM, Source, TM, Target) :-
+  method_of_class(CM, Class, Q),
+  resolved_param_type_ref(CM, Q, _, SM, Source),
+  resolved_return_type_ref(CM, Q, TM, Target),
+  dataclass(SM, Source, _, _),
+  dataclass(TM, Target, _, _),
+  SM = TM,
+  Source != Target.
+
+method_dataclass_transform(CM, Class, Q, SM, Source, TM, Target) :-
+  method_of_class(CM, Class, Q),
+  resolved_param_type_ref(CM, Q, _, SM, Source),
+  resolved_returns_dataclass(CM, Q, TM, Target, _),
+  dataclass(SM, Source, _, _),
+  dataclass(TM, Target, _, _),
+  SM != TM.
+
+method_dataclass_transform(CM, Class, Q, SM, Source, TM, Target) :-
+  method_of_class(CM, Class, Q),
+  resolved_param_type_ref(CM, Q, _, SM, Source),
+  resolved_returns_dataclass(CM, Q, TM, Target, _),
+  dataclass(SM, Source, _, _),
+  dataclass(TM, Target, _, _),
+  SM = TM,
+  Source != Target.
+
+method_transform_reads_field(CM, Class, Q, Source, Field, Target) :-
+  method_dataclass_transform(CM, Class, Q, _, Source, _, Target),
+  resolved_param_type_ref(CM, Q, Param, _, Source),
+  attribute_read(CM, Q, Param, Field, _).
+
+method_field_to_constructor_arg(CM, Class, Q, Source, SourceField, Target, TargetArg) :-
+  method_dataclass_transform(CM, Class, Q, _, Source, _, Target),
+  resolved_param_type_ref(CM, Q, Param, _, Source),
+  field_flows_to_constructor_arg(CM, Q, Param, SourceField, Target, TargetArg, _).
+
+method_field_to_constructor_arg(CM, Class, Q, Source, SourceField, Target, TargetArg) :-
+  method_dataclass_transform(CM, Class, Q, _, Source, _, Target),
+  resolved_param_type_ref(CM, Q, Param, _, Source),
+  field_flows_to_constructor_arg(CM, Q, Local, SourceField, Target, TargetArg, _),
+  local_depends_on_field(CM, Q, Local, Param, SourceField, _).
+
+optional_field_read_in_condition(CM, Class, Q, DM, D, Field) :-
+  method_of_class(CM, Class, Q),
+  resolved_param_type_ref(CM, Q, Param, DM, D),
+  dataclass(DM, D, _, _),
+  optional_dataclass_field(DM, D, Field),
+  condition_reads_attribute(CM, Q, Param, Field, _).
+
+transform_optional_field_test_target(CM, Class, Q, Source, Field, Target, TargetArg) :-
+  method_field_to_constructor_arg(CM, Class, Q, Source, Field, Target, TargetArg),
+  optional_dataclass_field(_, Source, Field).
+
+transform_required_field_test_target(CM, Class, Q, Source, Field, Target, TargetArg) :-
+  method_field_to_constructor_arg(CM, Class, Q, Source, Field, Target, TargetArg),
+  required_dataclass_field(_, Source, Field).
+
+override_dataclass_contract(M, C, Base, Method, Q, D, Role) :-
+  method_override(M, C, Base, Method, Q),
+  class_method_uses_dataclass(BaseModule, Base, BaseQualifiedName, _, D, Role),
+  function_name(BaseModule, BaseQualifiedName, Method).
+
+method_returns_none_or_dataclass(M, C, Q, D) :-
+  method_of_class(M, C, Q),
+  returns_none(M, Q, _),
+  returns_dataclass(M, Q, D, _).
+
+function_call_edge(CM, CQ, TM, TQ, Line) :-
+  call_target(CM, CQ, _, TM, TQ, _, Line).
+
+reachable_function_call(CM, CQ, TM, TQ) :-
+  function_call_edge(CM, CQ, TM, TQ, _).
+
+reachable_function_call(CM, CQ, TM, TQ) :-
+  function_call_edge(CM, CQ, MidModule, MidQ, _),
+  reachable_function_call(MidModule, MidQ, TM, TQ).
+
+interprocedural_class_method_uses_dataclass(CM, Class, Q, CM, Q, DM, D, Role) :-
+  class_method_uses_dataclass(CM, Class, Q, DM, D, Role).
+
+interprocedural_class_method_uses_dataclass(CM, Class, Q, CalleeModule, CalleeQ, DM, D, Role) :-
+  method_of_class(CM, Class, Q),
+  reachable_function_call(CM, Q, CalleeModule, CalleeQ),
+  class_method_uses_dataclass(CalleeModule, _, CalleeQ, DM, D, Role).
+
+interprocedural_method_dataclass_transform(CM, Class, Q, CM, Q, SM, Source, TM, Target) :-
+  method_dataclass_transform(CM, Class, Q, SM, Source, TM, Target).
+
+interprocedural_method_dataclass_transform(CM, Class, Q, CalleeModule, CalleeQ, SM, Source, TM, Target) :-
+  method_of_class(CM, Class, Q),
+  reachable_function_call(CM, Q, CalleeModule, CalleeQ),
+  method_dataclass_transform(CalleeModule, _, CalleeQ, SM, Source, TM, Target).
+
+interprocedural_method_field_to_constructor_arg(CM, Class, Q, CM, Q, Source, SourceField, Target, TargetArg) :-
+  method_field_to_constructor_arg(CM, Class, Q, Source, SourceField, Target, TargetArg).
+
+interprocedural_method_field_to_constructor_arg(CM, Class, Q, CalleeModule, CalleeQ, Source, SourceField, Target, TargetArg) :-
+  method_of_class(CM, Class, Q),
+  reachable_function_call(CM, Q, CalleeModule, CalleeQ),
+  method_field_to_constructor_arg(CalleeModule, _, CalleeQ, Source, SourceField, Target, TargetArg).

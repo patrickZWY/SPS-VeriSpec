@@ -14,14 +14,16 @@ The important shift is scope:
 The extractor emits Souffle-compatible base facts for:
 
 - modules and file paths
-- imports
-- class definitions and inheritance
-- dataclasses
+- imports and import aliases
+- class definitions, inheritance, and resolved inheritance candidates
+- dataclasses and standard `@dataclass` options
 - dataclass fields
 - dataclass field default factories
-- dataclass field type references
+- dataclass field type references and resolved dataclass field type references
 - function and method definitions
 - function names split from qualified names
+- function parameter, return, and dataclass-return type references, including
+  resolved candidates
 - function calls
 - resolved call targets and call arguments
 - call protocol events such as validate/authenticate/publish/open/close
@@ -35,6 +37,8 @@ The extractor emits Souffle-compatible base facts for:
 - local dataclass value assignments
 - condition attribute reads
 - branch conditions and normalized condition atoms
+- local aliases, loop/comprehension iteration and filters, assertions, context
+  managers, await/yield expressions, pattern matches, and subscript access
 - literal and `None` returns
 - assigned literals and constructor argument literals
 - constructor/return string-composition markers for f-strings, joins, format calls, and simple concatenation
@@ -50,11 +54,25 @@ focused on application code.
 1. Extract facts for the target Python project.
 2. Model all discovered dataclasses.
 3. Let the LLM and the user review that candidate model inventory.
-4. Keep or prune abstractions later.
-5. Only then connect behavior or control flow if needed.
+4. Run effect, deduction, and test-target rules over the dataclass inventory.
+5. Run the semantic/static-analysis layer for value flow, boundary behavior,
+   interprocedural summaries, slicing, abstract states, protocol candidates, and
+   common-AST relations.
+6. Generate tests only from conservative relations with executable oracles, and
+   keep lower-confidence relations as review candidates.
+7. Validate generated tests, then measure relation-to-test yield, coverage
+   deltas, and mutation score against the target checkout.
 
-This is a better first step than attempting a full Souffle translation of an
-entire Python program.
+The dataclass inventory is still the right first step. The current workflow no
+longer stops there: later layers deliberately add lightweight semantic and
+static-analysis facts without attempting a full Souffle translation of an entire
+Python program.
+
+For agent-run project evaluations, follow the full reporting protocol in
+`README.md`: run the Python fact baseline, run the Souffle backend, attempt test
+generation, validate generated tests, run coverage/evaluation visualizations,
+run mutation evaluation when applicable, and report the generated Markdown
+artifacts back to the user.
 
 ## Generate facts
 
@@ -78,7 +96,7 @@ The generic dataclass-first Souffle program is:
 ```bash
 mkdir -p /tmp/project-out
 souffle -F /tmp/project-facts -D /tmp/project-out \
-  rule_layer/dataclass_schema_model.dl
+  souffle_static_analysis/dataclass_schema_model.dl
 ```
 
 This program uses Souffle record types to keep field metadata structured rather
@@ -103,7 +121,7 @@ After the schema layer, the next generic program is:
 ```bash
 mkdir -p /tmp/project-effect-out
 souffle -F /tmp/project-facts -D /tmp/project-effect-out \
-  rule_layer/dataclass_effect_model.dl
+  souffle_static_analysis/dataclass_effect_model.dl
 ```
 
 This program associates dataclasses with surrounding effects through:
@@ -136,7 +154,7 @@ Once schema and effect relations exist, the next generic layer is deduction:
 ```bash
 mkdir -p /tmp/project-deduction-out
 souffle -F /tmp/project-facts -D /tmp/project-deduction-out \
-  rule_layer/dataclass_deduction_model.dl
+  souffle_static_analysis/dataclass_deduction_model.dl
 ```
 
 This layer surfaces higher-level relationships such as:
@@ -171,7 +189,7 @@ modeling:
 ```bash
 mkdir -p /tmp/project-test-out
 souffle -F /tmp/project-facts -D /tmp/project-test-out \
-  rule_layer/dataclass_test_model.dl
+  souffle_static_analysis/dataclass_test_model.dl
 ```
 
 This layer derives relations intended to drive tests and design review:
@@ -211,7 +229,7 @@ protocol-order candidates:
 ```bash
 mkdir -p /tmp/project-semantic-out
 souffle -F /tmp/project-facts -D /tmp/project-semantic-out \
-  rule_layer/semantic_model.dl
+  souffle_static_analysis/semantic_model.dl
 ```
 
 This layer does not try to prove full runtime behavior. It surfaces semantic
@@ -261,14 +279,24 @@ Useful outputs:
 - `string_composition_target.csv`
 - `numeric_bound.csv`
 - `boundary_test_candidate.csv`
+- `boundary_behavior.csv`
+- `helper_boundary_behavior.csv`
 - `numeric_bound_conflict_candidate.csv`
+- `alias_attribute_read.csv`
+- `dataclass_collection_iteration.csv`
+- `asserted_dataclass_field.csv`
+- `matched_dataclass_subject.csv`
+- `async_obligation_candidate.csv`
+- `generator_output_candidate.csv`
 
 ## One-command runner
 
 There is also a generic runner:
 
 ```bash
-python3 tools/run_souffle_models.py <python-project> --work-dir /tmp/project-run
+python3 tools/run_static_analysis.py <python-project> \
+  --engine souffle \
+  --work-dir /tmp/project-run
 ```
 
 This executes extraction plus the schema, effect, deduction, test-target, and
@@ -278,6 +306,15 @@ semantic models, then writes a Markdown summary to:
 /tmp/project-run/summary.md
 ```
 
+For comparison, the Python-only baseline runs just the extractor and fact
+inventory without any Souffle-derived relations:
+
+```bash
+python3 tools/run_static_analysis.py <python-project> \
+  --engine python \
+  --work-dir /tmp/project-python-run
+```
+
 ## Example on CutePetsBoston
 
 ```bash
@@ -285,25 +322,25 @@ python3 tools/python_to_souffle.py CutePetsBoston \
   --souffle-facts-dir /tmp/cutepets-facts
 mkdir -p /tmp/cutepets-dataclass-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-dataclass-out \
-  rule_layer/dataclass_schema_model.dl
+  souffle_static_analysis/dataclass_schema_model.dl
 
 mkdir -p /tmp/cutepets-effect-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-effect-out \
-  rule_layer/dataclass_effect_model.dl
+  souffle_static_analysis/dataclass_effect_model.dl
 
 mkdir -p /tmp/cutepets-deduction-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-deduction-out \
-  rule_layer/dataclass_deduction_model.dl
+  souffle_static_analysis/dataclass_deduction_model.dl
 
 mkdir -p /tmp/cutepets-test-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-test-out \
-  rule_layer/dataclass_test_model.dl
+  souffle_static_analysis/dataclass_test_model.dl
 
 mkdir -p /tmp/cutepets-semantic-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-semantic-out \
-  rule_layer/semantic_model.dl
+  souffle_static_analysis/semantic_model.dl
 
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-run
+python3 tools/run_static_analysis.py CutePetsBoston --engine souffle --work-dir /tmp/cutepets-run
 ```
 
 ## Verification
@@ -321,23 +358,23 @@ python3 tools/python_to_souffle.py CutePetsBoston --souffle-facts-dir /tmp/cutep
 
 mkdir -p /tmp/cutepets-dataclass-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-dataclass-out \
-  rule_layer/dataclass_schema_model.dl
+  souffle_static_analysis/dataclass_schema_model.dl
 
 mkdir -p /tmp/cutepets-effect-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-effect-out \
-  rule_layer/dataclass_effect_model.dl
+  souffle_static_analysis/dataclass_effect_model.dl
 
 mkdir -p /tmp/cutepets-deduction-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-deduction-out \
-  rule_layer/dataclass_deduction_model.dl
+  souffle_static_analysis/dataclass_deduction_model.dl
 
 mkdir -p /tmp/cutepets-test-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-test-out \
-  rule_layer/dataclass_test_model.dl
+  souffle_static_analysis/dataclass_test_model.dl
 
 mkdir -p /tmp/cutepets-semantic-out
 souffle -F /tmp/cutepets-facts -D /tmp/cutepets-semantic-out \
-  rule_layer/semantic_model.dl
+  souffle_static_analysis/semantic_model.dl
 
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/cutepets-run
+python3 tools/run_static_analysis.py CutePetsBoston --engine souffle --work-dir /tmp/cutepets-run
 ```

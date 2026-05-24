@@ -15,10 +15,112 @@ pass the path to any Python project you want to analyze.
 ```text
 Python source
 -> AST fact extraction
--> Souffle rule layers
+-> dataclass schema/effect/deduction rules
+-> test-target and semantic analysis rules
+-> static-analysis candidates such as interprocedural dataflow, slicing,
+   abstract states, typestate/protocol obligations, and common-AST relations
 -> derived CSV relations and Markdown summaries
--> generated-test candidates / design review
+-> conservative generated pytest tests plus review candidates
+-> validation, coverage/evaluation reports, and mutation evaluation
 ```
+
+The semantic/static-analysis layer is deliberately lightweight. It does not try
+to prove whole-program correctness. It derives reviewable relations such as
+field influence, observable output slices, boundary behavior, nullness/emptiness
+states, and protocol-order candidates, then the generator turns only the
+high-confidence subset into executable tests.
+
+## Agent analysis protocol
+
+When an agent is asked to analyze a target project, it should run the whole
+pipeline and report artifacts back to the user. Do not stop after producing raw
+facts or a single summary file.
+
+Use this protocol for each target project:
+
+1. Identify the target checkout and project name.
+   - Example target path: `CutePetsBoston` or `/path/to/project`.
+   - Example project name: `cutepetsboston` or another lowercase identifier.
+2. Run the Python fact-inventory baseline:
+
+   ```bash
+   .venv/bin/python tools/run_static_analysis.py <target-project> \
+     --engine python \
+     --work-dir /tmp/sps-<project-name>-python
+   ```
+
+3. Run the Souffle static-analysis backend:
+
+   ```bash
+   .venv/bin/python tools/run_static_analysis.py <target-project> \
+     --engine souffle \
+     --work-dir /tmp/sps-<project-name>-souffle
+   ```
+
+4. Inspect and summarize both analysis reports:
+   - `/tmp/sps-<project-name>-python/summary.md`
+   - `/tmp/sps-<project-name>-souffle/summary.md`
+   - Call out whether the Souffle backend derived meaningful schema,
+     transformation, semantic, interprocedural, slicing, abstract-state,
+     typestate, boundary, or common-AST relations.
+5. Attempt generated tests from the Souffle output:
+
+   ```bash
+   .venv/bin/python tools/generate_pytest_from_properties.py \
+     --analysis-dir /tmp/sps-<project-name>-souffle \
+     --output-dir generated_tests \
+     --project-name <project-name>
+   ```
+
+   If the target project does not expose the dataclass transformation patterns
+   currently supported by the generator, report that clearly instead of treating
+   it as a tool failure.
+6. Validate generated tests when any executable tests are emitted:
+
+   ```bash
+   .venv/bin/python tools/validate_generated_tests.py \
+     generated_tests/<project-name> \
+     --target-project <target-project>
+   ```
+
+7. Run coverage and visualization evaluation when the target has a test suite
+   and generated tests are importable:
+
+   ```bash
+   .venv/bin/python tools/coverage_stats.py \
+     --target-project <target-project> \
+     --target-tests <target-project>/tests \
+     --generated-tests generated_tests/<project-name> \
+     --report /tmp/sps-<project-name>-coverage.md
+
+   .venv/bin/python tools/evaluation_stats.py \
+     --analysis-dir /tmp/sps-<project-name>-souffle \
+     --target-project <target-project> \
+     --target-tests <target-project>/tests \
+     --generated-tests generated_tests/<project-name> \
+     --report /tmp/sps-<project-name>-evaluation.md
+   ```
+
+8. Run mutation evaluation when generated tests and target tests both run:
+
+   ```bash
+   .venv/bin/python tools/mutation_eval.py \
+     --analysis-dir /tmp/sps-<project-name>-souffle \
+     --target-project <target-project> \
+     --target-tests <target-project>/tests \
+     --generated-tests generated_tests/<project-name> \
+     --max-mutants 16 \
+     --report /tmp/sps-<project-name>-mutation.md
+   ```
+
+9. Final user report must include:
+   - Commands that passed or failed.
+   - Paths to Markdown reports and generated test files.
+   - Generated-test pass/fail/skip counts.
+   - Relation-to-test yield and coverage delta when available.
+   - Mutation score and which mutants handwritten tests missed when available.
+   - A short assessment of whether the analysis generalized to the new project
+     and what blocked any missing stages.
 
 If you want to reproduce the current experiment, first put the sample project at
 `./CutePetsBoston`:
@@ -31,15 +133,34 @@ git clone <your-cute-pets-boston-repo-url> CutePetsBoston
 Then run the full current analysis with:
 
 ```bash
-python3 tools/run_souffle_models.py CutePetsBoston --work-dir /tmp/sps-analysis-run
+python3 tools/run_static_analysis.py CutePetsBoston \
+  --engine souffle \
+  --work-dir /tmp/sps-analysis-run
 ```
 
 To analyze a different Python project, replace `CutePetsBoston` with that
 project path:
 
 ```bash
-python3 tools/run_souffle_models.py /path/to/python-project --work-dir /tmp/sps-analysis-run
+python3 tools/run_static_analysis.py /path/to/python-project \
+  --engine souffle \
+  --work-dir /tmp/sps-analysis-run
 ```
+
+The advanced static-analysis relations are implemented in Souffle under
+`souffle_static_analysis/`. Python is still used as the frontend that extracts
+AST facts and as the orchestration/reporting/test-generation layer. To run only
+the Python extractor/fact-inventory baseline, without any Souffle-derived
+relations:
+
+```bash
+python3 tools/run_static_analysis.py /path/to/python-project \
+  --engine python \
+  --work-dir /tmp/sps-python-facts-run
+```
+
+For backwards compatibility, `tools/run_souffle_models.py` still runs the
+Souffle backend directly.
 
 Then inspect:
 
@@ -77,6 +198,12 @@ Useful relation outputs include:
 - `/tmp/sps-analysis-run/semantic_out/boundary_test_candidate.csv`
 - `/tmp/sps-analysis-run/semantic_out/boundary_behavior.csv`
 - `/tmp/sps-analysis-run/semantic_out/helper_boundary_behavior.csv`
+- `/tmp/sps-analysis-run/semantic_out/alias_attribute_read.csv`
+- `/tmp/sps-analysis-run/semantic_out/dataclass_collection_iteration.csv`
+- `/tmp/sps-analysis-run/semantic_out/asserted_dataclass_field.csv`
+- `/tmp/sps-analysis-run/semantic_out/matched_dataclass_subject.csv`
+- `/tmp/sps-analysis-run/semantic_out/async_obligation_candidate.csv`
+- `/tmp/sps-analysis-run/semantic_out/generator_output_candidate.csv`
 
 To generate portable pytest tests from the conservative executable subset of
 the derived properties, keep the tests outside the analyzed project:
@@ -94,6 +221,7 @@ This writes:
 - `generated_tests/cutepetsboston/test_generated_dataclass_hypothesis.py`
 - `generated_tests/cutepetsboston/test_generated_helper_boundaries.py`
 - `generated_tests/cutepetsboston/test_generated_common_ast_properties.py`
+- `generated_tests/cutepetsboston/test_generated_interprocedural_properties.py`
 - `generated_tests/cutepetsboston/README.md`
 
 The generated tests are intentionally not written into `CutePetsBoston/`.
@@ -149,7 +277,14 @@ python3 tools/evaluation_stats.py \
   --report /tmp/sps-evaluation-stats.md
 ```
 
-To run a small mutation evaluation over relation-guided transform mutants and
+The evaluation report measures how many derived relations became tests,
+separates handwritten-only, generated-only, and combined source-line coverage,
+and reports the coverage delta added by generated tests. It currently includes
+relation-yield views for dataclass transforms, helper boundaries, common-AST
+relations, and interprocedural observable-slice cases.
+
+To run a small mutation evaluation over relation-guided transform mutants,
+common-AST collection-iteration mutants, interprocedural pipeline mutants, and
 solver-adjacent boundary mutants:
 
 ```bash
@@ -161,6 +296,14 @@ python3 tools/mutation_eval.py \
   --max-mutants 12 \
   --report /tmp/sps-mutation-eval.md
 ```
+
+The mutation runner copies the target checkout, applies one mutant at a time,
+and compares handwritten, generated, and combined mutation scores. Current
+operators replace relation-guided field references in transform code, drop
+observed collection-iteration contributions, replace pipeline stages that
+participate in multi-hop interprocedural flows, tighten or weaken comparison
+operators, perturb boundary constants near derived numeric bounds, and remove
+simple truncation markers.
 
 ## Development requirement
 
@@ -231,13 +374,16 @@ facts into higher-level test obligations with clear oracles.
 ## Repository map
 
 - `CutePetsBoston/`: optional local checkout of the sample Python application used as the current analysis target.
-- `tools/`: Python tooling for AST fact extraction and one-command Souffle model execution.
-- `rule_layer/`: generic reusable Souffle Datalog models and base fact declarations.
-  It includes schema, effect, deduction, test-target, and semantic models.
+- `tools/`: Python tooling for AST fact extraction, backend orchestration,
+  generated tests, validation, coverage/evaluation, and mutation evaluation.
+- `souffle_static_analysis/`: runnable Souffle/Datalog static-analysis backend.
+  It includes schema, effect, deduction, test-target, semantic,
+  interprocedural, slicing, abstract-state, typestate, and boundary rules.
+- `rule_layer/`: legacy location for the generic Souffle models and findings
+  notes. New separated backend runs use `souffle_static_analysis/`.
 - `rule_layer_impl/`: project-specific interpretation notes for the CutePetsBoston analysis results.
 - `prototype_tests/`: unit tests for the Python AST extractor and fact writer.
 - `example.md`: current end-to-end workflow and examples of derived relations that can become tests.
-- `motivation.md`: project motivation and research questions around iterative test generation.
 - `souffle-prototype.md`: practical guide for extracting facts and running the Souffle models.
 - `llm-rule-layer.md`: guidance for using an LLM to create or review generic Souffle rule layers.
 - `dataclass-test-generation-layer.md`: design notes for turning dataclass analysis results into test targets.
@@ -246,55 +392,74 @@ facts into higher-level test obligations with clear oracles.
 
 Implemented:
 
-- Python AST fact extraction.
-- Generic dataclass schema, effect, deduction, test-target, and semantic Souffle models.
-- Local dependency tracking through aliases and composed expressions.
-- Conservative call-result read inference.
-- Literal, string-composition, numeric-comparison, `len(...)`, and slice-bound fact extraction.
+- Python AST fact extraction for modules, imports, classes, functions,
+  dataclasses, fields, type references, calls, constructor arguments, field
+  reads/writes, exceptions, environment reads, and method overrides.
+- Generic Souffle dataclass schema modeling, including required/optional fields,
+  default/factory-backed fields, dataclass dependencies, and dataclass shape
+  summaries.
+- Dataclass effect modeling for typed parameters/returns, constructor sites,
+  field effects, call effects, environment reads, exceptions, and
+  dataclass-to-dataclass transformations.
+- Deduction rules for reachable transformations, entry/bridge/terminal
+  dataclasses, field-to-transformation relations, unread required fields, and
+  effectful dataclasses.
+- Test-target modeling for mutable/frozen dataclasses, optional/required field
+  targets, method-level transforms, field-to-constructor mappings, optional
+  branch reads, and override contracts.
+- Local dependency tracking through aliases and composed expressions, plus
+  conservative call-result read inference.
+- Dataclass option extraction for the standard `@dataclass` options:
+  `init`, `repr`, `eq`, `order`, `unsafe_hash`, `frozen`, `match_args`,
+  `kw_only`, `slots`, and `weakref_slot`.
+- One-command analysis runner with Markdown summary output, plus separated
+  backend selection for Souffle-derived analysis versus Python fact inventory.
+- Semantic field-flow, composed-flow, observable-required-field,
+  lossy-field-candidate, literal-status, string-composition, numeric-boundary,
+  and boundary-test derivations.
+- Literal, string-composition, numeric-comparison, `len(...)`, and slice-bound
+  fact extraction used by the semantic layer.
+- Portable pytest generation from the conservative executable subset of
+  dataclass transformation and optional-field properties.
+- Optional Hypothesis property-test generation for supported transformation
+  properties.
+- Generated-test validation runner with pass/fail/skip Markdown reports.
+- Combined coverage-statistics runner for target tests plus generated tests.
+- Evaluation-statistics runner for relation-to-test yield, inline SVG charts,
+  handwritten/generated/combined coverage, and coverage deltas.
+- Boundary-guided mutation-evaluation runner comparing handwritten, generated,
+  and combined mutation scores for relation-guided transform,
+  collection-iteration, interprocedural pipeline, and solver-adjacent boundary
+  mutants.
+- Souffle boundary-behavior relations that associate generic numeric bounds
+  with dataclass inputs, primitive string returns, and helper return behavior.
+- Lower-confidence helper-boundary pytest generation for simple string-length
+  helper boundaries.
 - Common AST fact extraction for local aliases, loop/comprehension iteration,
   assertions, context managers, await/yield expressions, pattern matching, and
   subscript access.
-- Semantic field-flow, composed-flow, observable-required-field,
-  lossy-field-candidate, literal-status, numeric-boundary, and boundary-behavior
-  derivations.
 - Semantic relations that use common AST facts, including local-alias closure,
   alias-normalized attribute reads, dataclass collection iteration, asserted
   dataclass fields, matched dataclass subjects, async obligation candidates, and
   generator output candidates.
+- Common-AST pytest generation for observable dataclass collection iteration
+  relations.
+- Common-AST collection-iteration mutation operators for dataclass collection
+  fields such as `Post.tags`.
 - Interprocedural dataflow summaries that lift local semantic field-flow facts
   into reusable function summaries, compose those summaries across dataclass
   boundaries, and derive observable output slices.
+- Interprocedural generated tests for public method paths with simple
+  observable string-output oracles.
+- Interprocedural pipeline mutation operators for multi-hop semantic flows.
 - Program-slicing candidates for backward output slices, function-local
   backward slices, external-call field slices, and control-dependence slices.
 - Initial abstract-interpretation candidates for nullness, emptiness, string
   length, and status/result literals.
 - Initial typestate/protocol candidates for validate/authenticate-before-publish
   and open-before-close style ordering mistakes.
-- Dataclass option extraction for the standard `@dataclass` options:
-  `init`, `repr`, `eq`, `order`, `unsafe_hash`, `frozen`, `match_args`,
-  `kw_only`, `slots`, and `weakref_slot`.
-- One-command analysis runner with Markdown summary output.
-- Portable pytest generation from a conservative subset of derived dataclass
-  transformation properties.
-- Optional Hypothesis property-test generation for supported transformation
-  properties.
-- Lower-confidence helper-boundary pytest generation for simple string-length
-  helper boundaries.
-- Common-AST pytest generation for observable dataclass collection iteration
-  relations.
-- Generated-test validation runner with pass/fail/skip Markdown reports.
-- Combined coverage-statistics runner for target tests plus generated tests.
-- Evaluation-statistics runner for relation-to-test yield and coverage deltas.
-- Boundary-guided mutation-evaluation runner for handwritten, generated, and
-  combined mutation scores.
-- Common-AST collection-iteration mutation operators for dataclass collection
-  fields such as `Post.tags`.
-- Souffle boundary-behavior relations that associate generic numeric bounds
-  with dataclass inputs, primitive string returns, and helper return behavior.
 
 Still future work:
-
-Priority next steps:
 
 - Validate generality on a second project. Every claim of generality currently
   rests on `CutePetsBoston`. Run the full pipeline against at least one other
@@ -315,7 +480,7 @@ Priority next steps:
   reject, or refine that relation. Persist the decision so accepted relations
   feed the next analysis round and rejected ones are demoted. This is the
   minimum feedback path that turns the current one-way `facts -> rules ->
-  tests` pipeline into the iterative loop described in `motivation.md`.
+  tests` pipeline into an iterative analysis loop.
 
 - Continue the AST coverage audit. The extractor now captures several common
   syntax surfaces beyond dataclass flows, but the standard `ast` grammar still
@@ -342,7 +507,8 @@ Priority next steps:
 - Add branch-local return facts that connect a condition to a specific returned constructor.
 - Refine CFG/control-dependence facts beyond the current line-order slice
   candidates for more precise guarded-return and validation reasoning.
-- Expand mutation testing beyond the current relation-guided transform and
+- Expand mutation testing beyond the current relation-guided transform,
+  common-AST collection-iteration, interprocedural pipeline, and
   solver-adjacent boundary mutants.
 - Explore concolic testing and solver-aided test generation so path conditions
   and boundary constraints can be solved rather than sampled.
@@ -359,21 +525,32 @@ Priority next steps:
 
 Potential static-analysis directions:
 
-- Lightweight points-to/may-alias analysis for local variables, object fields, and constructor results.
-- Taint-style source/sink/sanitizer analysis for user input, environment variables, file/network data, and external API responses.
+- Lightweight points-to/may-alias analysis for local variables, object fields,
+  and constructor results. Local alias and local field-dependency facts are
+  implemented, but object-level and heap-level aliasing remain future work.
+- Taint-style source/sink/sanitizer analysis for user input, environment
+  variables, file/network data, and external API responses. Environment-read
+  and external-call slice facts exist, but end-to-end source/sink/sanitizer
+  classification remains future work.
 - Interprocedural dataflow summary expansion for validation, sanitization,
-  formatting, publish, parse, and error-result behavior. An initial field-flow
-  summary and observable-slice layer is implemented.
-- Expand program slicing beyond the initial observable-output, external-call,
-  and control-dependence slices, especially for logs, exception values, and
-  branch-specific outputs.
-- Refine control-dependence and guarded-return analysis to connect conditions
-  with specific constructors, effects, and failure paths.
-- Expand abstract-interpretation-style domains beyond the initial nullness,
-  emptiness, string-length, and status candidates, especially sign/range,
+  formatting, publish, parse, and error-result behavior. Initial field-flow
+  summaries, multi-hop dataclass composition, observable slices, and a small
+  executable public-path subset are implemented.
+- Program slicing beyond the initial observable-output, function-backward,
+  external-call, and line-order control-dependence slices, especially for logs,
+  exception values, and branch-specific outputs.
+- Control-dependence and guarded-return analysis beyond the current line-order
+  candidates, so conditions can be linked more precisely with specific
+  constructors, effects, and failure paths.
+- Abstract-interpretation-style domains beyond the initial nullness, emptiness,
+  string-length, numeric-bound, and status candidates, especially sign/range,
   collection size, and enum-like state.
-- Expand typestate/protocol analysis beyond the initial event-order candidates,
+- Typestate/protocol analysis beyond the initial event-order candidates,
   especially parse-before-field-access, open-before-read/write, transaction
   begin/commit/rollback, and async resource protocols.
-- Effect and purity summaries to distinguish pure transformations from network, filesystem, environment, clock, randomness, or exception effects.
-- Dead/unreachable relation candidates such as unused required fields, never-constructed dataclasses, impossible branches, and unobserved result fields.
+- Effect and purity summaries to distinguish pure transformations from network,
+  filesystem, environment, clock, randomness, or exception effects.
+- Dead/unreachable relation candidates such as unused required fields,
+  never-constructed dataclasses, impossible branches, and unobserved result
+  fields. Unread required-field candidates are implemented; broader dead-data
+  and unreachable-branch analysis remains future work.

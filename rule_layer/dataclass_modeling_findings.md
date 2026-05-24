@@ -16,7 +16,7 @@ then let developers keep or prune the resulting abstractions later.
 
 ## Souffle program
 
-The generic program is `rule_layer/dataclass_schema_model.dl`.
+The generic program is `souffle_static_analysis/dataclass_schema_model.dl`.
 
 It uses Souffle record types:
 
@@ -32,7 +32,7 @@ loosely related predicates.
 python3 tools/python_to_souffle.py <python-project-dir> --souffle-facts-dir /tmp/project-facts
 mkdir -p /tmp/project-dataclass-out
 souffle -F /tmp/project-facts -D /tmp/project-dataclass-out \
-  rule_layer/dataclass_schema_model.dl
+  souffle_static_analysis/dataclass_schema_model.dl
 ```
 
 Useful output files:

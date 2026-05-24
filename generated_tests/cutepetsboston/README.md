@@ -1,6 +1,6 @@
 # Generated Test Report
 
-- Analysis directory: `/private/tmp/sps-slicing-ai-check`
+- Analysis directory: `/private/tmp/sps-compare-souffle`
 - Test file: `generated_tests/cutepetsboston/test_generated_dataclass_properties.py`
 - Hypothesis test file: `generated_tests/cutepetsboston/test_generated_dataclass_hypothesis.py`
 - Helper boundary test file: `generated_tests/cutepetsboston/test_generated_helper_boundaries.py`
@@ -29,16 +29,16 @@ Or run through the SPS-VeriSpec validation wrapper to produce a Markdown summary
 python3 tools/validate_generated_tests.py generated_tests/cutepetsboston --target-project /path/to/target-project
 ```
 
-To produce relation-yield and coverage-delta evaluation stats:
+To produce relation-yield, common-AST/interprocedural yield, and coverage-delta evaluation stats:
 
 ```bash
-python3 tools/evaluation_stats.py --analysis-dir /private/tmp/sps-slicing-ai-check --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests generated_tests/cutepetsboston --report /tmp/sps-evaluation-stats.md
+python3 tools/evaluation_stats.py --analysis-dir /private/tmp/sps-compare-souffle --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests generated_tests/cutepetsboston --report /tmp/sps-evaluation-stats.md
 ```
 
-To run mutation evaluation against handwritten, generated, and combined suites:
+To run relation-guided transform, collection-iteration, interprocedural-pipeline, and boundary mutation evaluation against handwritten, generated, and combined suites:
 
 ```bash
-python3 tools/mutation_eval.py --analysis-dir /private/tmp/sps-slicing-ai-check --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests generated_tests/cutepetsboston --max-mutants 12 --report /tmp/sps-mutation-eval.md
+python3 tools/mutation_eval.py --analysis-dir /private/tmp/sps-compare-souffle --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests generated_tests/cutepetsboston --max-mutants 12 --report /tmp/sps-mutation-eval.md
 ```
 
 ## Emitted Cases

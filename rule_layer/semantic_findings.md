@@ -1,7 +1,7 @@
 # Generic Semantic Modeling Run
 
 This file describes the generic semantic layer implemented in
-`rule_layer/semantic_model.dl`.
+`souffle_static_analysis/semantic_model.dl`.
 
 The goal is to move beyond dataclass shape without becoming project-specific.
 The layer derives conservative semantic candidates from value flow, literal
@@ -12,7 +12,7 @@ drive concrete tests and review, not to prove full runtime correctness.
 
 ## Souffle program
 
-The generic program is `rule_layer/semantic_model.dl`.
+The generic program is `souffle_static_analysis/semantic_model.dl`.
 
 ## How to run it
 
@@ -20,13 +20,13 @@ The generic program is `rule_layer/semantic_model.dl`.
 python3 tools/python_to_souffle.py <python-project-dir> --souffle-facts-dir /tmp/project-facts
 mkdir -p /tmp/project-semantic-out
 souffle -F /tmp/project-facts -D /tmp/project-semantic-out \
-  rule_layer/semantic_model.dl
+  souffle_static_analysis/semantic_model.dl
 ```
 
 Or run the whole pipeline:
 
 ```bash
-python3 tools/run_souffle_models.py <python-project-dir> --work-dir /tmp/project-run
+python3 tools/run_static_analysis.py <python-project-dir> --engine souffle --work-dir /tmp/project-run
 ```
 
 ## What this layer deduces

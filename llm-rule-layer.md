@@ -43,18 +43,25 @@ The extractor currently emits these relevant predicates:
 - `module(Module)`
 - `module_file(Module, RelativePath)`
 - `imports(Module, ImportedSymbol)`
+- `import_alias(Module, LocalName, QualifiedName)`
 - `defines_class(Module, ClassName)`
 - `extends(Module, ClassName, BaseName)`
+- `resolved_extends(Module, ClassName, BaseModule, BaseName)`
 - `dataclass(Module, ClassName, IsFrozen, LineNumber)`
+- `dataclass_option(Module, ClassName, OptionName, OptionValue, IsExplicit)`
 - `dataclass_field(Module, ClassName, FieldName, TypeRepr, IsOptional, HasDefault, DefaultKind, Position, LineNumber)`
 - `dataclass_field_default_factory(Module, ClassName, FieldName, FactoryName)`
 - `dataclass_field_type_ref(Module, ClassName, FieldName, TypeRef)`
+- `resolved_dataclass_field_type_ref(Module, ClassName, FieldName, TypeModule, TypeName)`
 - `method_of_class(Module, ClassName, QualifiedName)`
 - `function_param(Module, QualifiedName, ParamName, TypeRepr, Position, LineNumber)`
 - `function_param_type_ref(Module, QualifiedName, ParamName, TypeRef)`
+- `resolved_param_type_ref(Module, QualifiedName, ParamName, TypeModule, TypeName)`
 - `function_return_type(Module, QualifiedName, TypeRepr, LineNumber)`
 - `function_return_type_ref(Module, QualifiedName, TypeRef)`
+- `resolved_return_type_ref(Module, QualifiedName, TypeModule, TypeName)`
 - `returns_dataclass(Module, QualifiedName, ClassName, LineNumber)`
+- `resolved_returns_dataclass(Module, QualifiedName, TypeModule, TypeName, LineNumber)`
 - `attribute_read(Module, QualifiedName, OwnerName, AttributeName, LineNumber)`
 - `attribute_write(Module, QualifiedName, OwnerName, AttributeName, LineNumber)`
 - `handles_exception(Module, QualifiedName, ExceptionType, LineNumber)`
@@ -76,6 +83,17 @@ The extractor currently emits these relevant predicates:
 - `returns_none(Module, QualifiedName, LineNumber)`
 - `returns_literal(Module, QualifiedName, LiteralKind, LiteralValue, LineNumber)`
 - `method_override(Module, ClassName, BaseName, MethodName, QualifiedName)`
+- `local_alias(Module, QualifiedName, LocalName, TargetName, LineNumber)`
+- `loop_iterates(Module, QualifiedName, TargetName, IterExpr, LineNumber)`
+- `comprehension_iterates(Module, QualifiedName, TargetName, IterExpr, LineNumber)`
+- `comprehension_filter(Module, QualifiedName, TargetName, FilterExpr, LineNumber)`
+- `assertion(Module, QualifiedName, TestExpr, LineNumber)`
+- `with_resource(Module, QualifiedName, ContextExpr, OptionalName, LineNumber)`
+- `await_expr(Module, QualifiedName, AwaitedExpr, LineNumber)`
+- `yield_value(Module, QualifiedName, ValueExpr, LineNumber)`
+- `match_subject(Module, QualifiedName, SubjectExpr, LineNumber)`
+- `match_case(Module, QualifiedName, PatternKind, GuardExpr, LineNumber)`
+- `subscript_access(Module, QualifiedName, OwnerExpr, IndexKind, LineNumber)`
 - `local_depends_on_field(Module, QualifiedName, LocalName, SourceParam, SourceField, LineNumber)`
 - `call_result_assigned(Module, QualifiedName, LocalName, CalleeName, LineNumber)`
 - `resolved_call_result_assigned(Module, QualifiedName, LocalName, CalleeModule, CalleeQualifiedName, LineNumber)`
@@ -132,18 +150,25 @@ Base predicates:
 - module(Module)
 - module_file(Module, RelativePath)
 - imports(Module, ImportedSymbol)
+- import_alias(Module, LocalName, QualifiedName)
 - defines_class(Module, ClassName)
 - extends(Module, ClassName, BaseName)
+- resolved_extends(Module, ClassName, BaseModule, BaseName)
 - dataclass(Module, ClassName, IsFrozen, LineNumber)
+- dataclass_option(Module, ClassName, OptionName, OptionValue, IsExplicit)
 - dataclass_field(Module, ClassName, FieldName, TypeRepr, IsOptional, HasDefault, DefaultKind, Position, LineNumber)
 - dataclass_field_default_factory(Module, ClassName, FieldName, FactoryName)
 - dataclass_field_type_ref(Module, ClassName, FieldName, TypeRef)
+- resolved_dataclass_field_type_ref(Module, ClassName, FieldName, TypeModule, TypeName)
 - method_of_class(Module, ClassName, QualifiedName)
 - function_param(Module, QualifiedName, ParamName, TypeRepr, Position, LineNumber)
 - function_param_type_ref(Module, QualifiedName, ParamName, TypeRef)
+- resolved_param_type_ref(Module, QualifiedName, ParamName, TypeModule, TypeName)
 - function_return_type(Module, QualifiedName, TypeRepr, LineNumber)
 - function_return_type_ref(Module, QualifiedName, TypeRef)
+- resolved_return_type_ref(Module, QualifiedName, TypeModule, TypeName)
 - returns_dataclass(Module, QualifiedName, ClassName, LineNumber)
+- resolved_returns_dataclass(Module, QualifiedName, TypeModule, TypeName, LineNumber)
 - attribute_read(Module, QualifiedName, OwnerName, AttributeName, LineNumber)
 - attribute_write(Module, QualifiedName, OwnerName, AttributeName, LineNumber)
 - handles_exception(Module, QualifiedName, ExceptionType, LineNumber)
@@ -165,6 +190,17 @@ Base predicates:
 - returns_none(Module, QualifiedName, LineNumber)
 - returns_literal(Module, QualifiedName, LiteralKind, LiteralValue, LineNumber)
 - method_override(Module, ClassName, BaseName, MethodName, QualifiedName)
+- local_alias(Module, QualifiedName, LocalName, TargetName, LineNumber)
+- loop_iterates(Module, QualifiedName, TargetName, IterExpr, LineNumber)
+- comprehension_iterates(Module, QualifiedName, TargetName, IterExpr, LineNumber)
+- comprehension_filter(Module, QualifiedName, TargetName, FilterExpr, LineNumber)
+- assertion(Module, QualifiedName, TestExpr, LineNumber)
+- with_resource(Module, QualifiedName, ContextExpr, OptionalName, LineNumber)
+- await_expr(Module, QualifiedName, AwaitedExpr, LineNumber)
+- yield_value(Module, QualifiedName, ValueExpr, LineNumber)
+- match_subject(Module, QualifiedName, SubjectExpr, LineNumber)
+- match_case(Module, QualifiedName, PatternKind, GuardExpr, LineNumber)
+- subscript_access(Module, QualifiedName, OwnerExpr, IndexKind, LineNumber)
 - local_depends_on_field(Module, QualifiedName, LocalName, SourceParam, SourceField, LineNumber)
 - call_result_assigned(Module, QualifiedName, LocalName, CalleeName, LineNumber)
 - resolved_call_result_assigned(Module, QualifiedName, LocalName, CalleeModule, CalleeQualifiedName, LineNumber)

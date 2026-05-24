@@ -1,0 +1,943 @@
+// Generic semantic model over Python AST facts.
+//
+// This layer goes beyond dataclass shape. It derives conservative semantic
+// obligations from value flow, string composition, literal constructor
+// arguments, and numeric bounds.
+
+.include "souffle_static_analysis/base_facts.dl"
+
+.decl semantic_field_flow(
+  function_module:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  target_field:symbol,
+  flow_kind:symbol
+)
+.output semantic_field_flow
+
+.decl composed_semantic_field_flow(
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  target_field:symbol
+)
+.output composed_semantic_field_flow
+
+.decl function_summary_input_to_output(
+  function_module:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  target_field:symbol,
+  summary_kind:symbol
+)
+.output function_summary_input_to_output
+
+.decl interprocedural_field_flow(
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  target_field:symbol
+)
+.output interprocedural_field_flow
+
+.decl multi_hop_interprocedural_field_flow(
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  target_field:symbol
+)
+.output multi_hop_interprocedural_field_flow
+
+.decl observable_output_slice(
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  output_module:symbol,
+  output_class:symbol,
+  output_field:symbol,
+  slice_kind:symbol
+)
+.output observable_output_slice
+
+.decl observable_required_field(
+  function_module:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  target_field:symbol
+)
+.output observable_required_field
+
+.decl lossy_required_field_candidate(
+  function_module:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol
+)
+.output lossy_required_field_candidate
+
+.decl dataclass_bool_literal(
+  function_module:symbol,
+  qualified_name:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  field_name:symbol,
+  literal_value:symbol
+)
+.output dataclass_bool_literal
+
+.decl dataclass_string_literal(
+  function_module:symbol,
+  qualified_name:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  field_name:symbol,
+  literal_value:symbol
+)
+.output dataclass_string_literal
+
+.decl string_composition_target(
+  function_module:symbol,
+  qualified_name:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  field_name:symbol,
+  composition_kind:symbol
+)
+.output string_composition_target
+
+.decl numeric_bound(
+  function_module:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  bound_kind:symbol,
+  bound_value:number,
+  line:number
+)
+.output numeric_bound
+
+.decl boundary_test_candidate(
+  function_module:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  case_kind:symbol,
+  test_value:number
+)
+.output boundary_test_candidate
+
+.decl numeric_bound_conflict_candidate(
+  function_module:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  lower_bound:number,
+  upper_bound:number
+)
+.output numeric_bound_conflict_candidate
+
+.decl max_length_bound_kind(bound_kind:symbol)
+
+.decl boundary_behavior(
+  function_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  bound_kind:symbol,
+  bound_value:number,
+  input_module:symbol,
+  input_class:symbol,
+  input_field:symbol,
+  output_module:symbol,
+  output_class:symbol,
+  output_field:symbol,
+  behavior_kind:symbol
+)
+.output boundary_behavior
+
+.decl helper_boundary_behavior(
+  function_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  bound_kind:symbol,
+  bound_value:number,
+  input_param:symbol,
+  output_kind:symbol,
+  behavior_kind:symbol
+)
+.output helper_boundary_behavior
+
+.decl local_alias_reaches(
+  function_module:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  target_name:symbol
+)
+.output local_alias_reaches
+
+.decl alias_attribute_read(
+  function_module:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  target_name:symbol,
+  field_name:symbol
+)
+.output alias_attribute_read
+
+.decl dataclass_collection_iteration(
+  function_module:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  item_name:symbol,
+  iteration_kind:symbol
+)
+.output dataclass_collection_iteration
+
+.decl asserted_dataclass_field(
+  function_module:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  assertion_expr:symbol
+)
+.output asserted_dataclass_field
+
+.decl matched_dataclass_subject(
+  function_module:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  pattern_kind:symbol
+)
+.output matched_dataclass_subject
+
+.decl async_obligation_candidate(
+  function_module:symbol,
+  qualified_name:symbol,
+  awaited_expr:symbol
+)
+.output async_obligation_candidate
+
+.decl generator_output_candidate(
+  function_module:symbol,
+  qualified_name:symbol,
+  value_expr:symbol
+)
+.output generator_output_candidate
+
+.decl call_parameter_binding(
+  caller_module:symbol,
+  caller_qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  argument_expr:symbol,
+  callee_param:symbol,
+  line:number
+)
+.output call_parameter_binding
+
+.decl call_dataclass_argument(
+  caller_module:symbol,
+  caller_qualified_name:symbol,
+  callee_module:symbol,
+  callee_qualified_name:symbol,
+  argument_expr:symbol,
+  callee_param:symbol,
+  dataclass_module:symbol,
+  class_name:symbol,
+  line:number
+)
+.output call_dataclass_argument
+
+.decl interprocedural_local_field_flow(
+  function_module:symbol,
+  qualified_name:symbol,
+  local_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  target_module:symbol,
+  target_class:symbol,
+  target_field:symbol
+)
+.output interprocedural_local_field_flow
+
+.decl interprocedural_method_transform(
+  class_module:symbol,
+  class_name:symbol,
+  qualified_name:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  target_module:symbol,
+  target_class:symbol
+)
+.output interprocedural_method_transform
+
+.decl backward_output_slice(
+  output_module:symbol,
+  output_class:symbol,
+  output_field:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  slice_kind:symbol
+)
+.output backward_output_slice
+
+.decl function_backward_slice(
+  function_module:symbol,
+  qualified_name:symbol,
+  sink_kind:symbol,
+  sink_module:symbol,
+  sink_class:symbol,
+  sink_field:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol
+)
+.output function_backward_slice
+
+.decl external_call_field_slice(
+  function_module:symbol,
+  qualified_name:symbol,
+  callee:symbol,
+  argument_expr:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  line:number
+)
+.output external_call_field_slice
+
+.decl control_dependence_slice(
+  function_module:symbol,
+  qualified_name:symbol,
+  control_expr:symbol,
+  source_module:symbol,
+  source_class:symbol,
+  source_field:symbol,
+  effect_kind:symbol,
+  effect_detail:symbol,
+  effect_line:number
+)
+.output control_dependence_slice
+
+.decl abstract_value_state(
+  function_module:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  domain:symbol,
+  state:symbol,
+  evidence:symbol,
+  line:number
+)
+.output abstract_value_state
+
+.decl abstract_numeric_state(
+  function_module:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  domain:symbol,
+  state:symbol,
+  value:number,
+  line:number
+)
+.output abstract_numeric_state
+
+.decl nullable_use_before_guard_candidate(
+  function_module:symbol,
+  qualified_name:symbol,
+  dataclass_module:symbol,
+  class_name:symbol,
+  field_name:symbol,
+  use_line:number,
+  reason:symbol
+)
+.output nullable_use_before_guard_candidate
+
+.decl prior_protocol_event(
+  function_module:symbol,
+  qualified_name:symbol,
+  event_kind:symbol,
+  before_line:number
+)
+
+.decl guarded_nonnull_before(
+  function_module:symbol,
+  qualified_name:symbol,
+  expression:symbol,
+  before_line:number
+)
+
+.decl validation_before(
+  function_module:symbol,
+  qualified_name:symbol,
+  before_line:number
+)
+
+.decl typestate_transition(
+  function_module:symbol,
+  qualified_name:symbol,
+  receiver_expr:symbol,
+  from_state:symbol,
+  to_state:symbol,
+  event_kind:symbol,
+  line:number
+)
+.output typestate_transition
+
+.decl protocol_obligation_candidate(
+  function_module:symbol,
+  qualified_name:symbol,
+  receiver_expr:symbol,
+  obligation:symbol,
+  event_line:number,
+  reason:symbol
+)
+.output protocol_obligation_candidate
+
+.decl typestate_protocol_violation(
+  function_module:symbol,
+  qualified_name:symbol,
+  receiver_expr:symbol,
+  violation:symbol,
+  event_kind:symbol,
+  line:number
+)
+.output typestate_protocol_violation
+
+local_alias_reaches(FM, Q, Local, Target) :-
+  local_alias(FM, Q, Local, Target, _).
+
+local_alias_reaches(FM, Q, Local, Target) :-
+  local_alias(FM, Q, Local, Mid, _),
+  local_alias_reaches(FM, Q, Mid, Target).
+
+alias_attribute_read(FM, Q, Local, Target, Field) :-
+  local_alias_reaches(FM, Q, Local, Target),
+  attribute_read(FM, Q, Target, Field, _).
+
+dataclass_collection_iteration(FM, Q, SM, Source, SourceField, Item, "for") :-
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  loop_iterates(FM, Q, Item, IterExpr, _),
+  IterExpr = ParamField,
+  ParamField = cat(SourceParam, cat(".", SourceField)).
+
+dataclass_collection_iteration(FM, Q, SM, Source, SourceField, Item, "comprehension") :-
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  comprehension_iterates(FM, Q, Item, IterExpr, _),
+  IterExpr = ParamField,
+  ParamField = cat(SourceParam, cat(".", SourceField)).
+
+asserted_dataclass_field(FM, Q, SM, Source, SourceField, AssertionExpr) :-
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  assertion(FM, Q, AssertionExpr, Line),
+  condition_reads_attribute(FM, Q, SourceParam, SourceField, Line).
+
+matched_dataclass_subject(FM, Q, SM, Source, PatternKind) :-
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  match_subject(FM, Q, SourceParam, _),
+  match_case(FM, Q, PatternKind, _, _).
+
+matched_dataclass_subject(FM, Q, SM, Source, PatternKind) :-
+  resolved_local_dataclass_value(FM, Q, Local, SM, Source, _),
+  match_subject(FM, Q, Local, _),
+  match_case(FM, Q, PatternKind, _, _).
+
+async_obligation_candidate(FM, Q, AwaitedExpr) :-
+  await_expr(FM, Q, AwaitedExpr, _).
+
+generator_output_candidate(FM, Q, ValueExpr) :-
+  yield_value(FM, Q, ValueExpr, _),
+  ValueExpr != "".
+
+call_parameter_binding(CM, CQ, TM, TQ, ArgExpr, Param, Line) :-
+  call_target(CM, CQ, Callee, TM, TQ, "function", Line),
+  call_argument(CM, CQ, Callee, Position, "", ArgExpr, Line),
+  Position > 0,
+  function_param(TM, TQ, Param, _, Position, _).
+
+call_parameter_binding(CM, CQ, TM, TQ, ArgExpr, Param, Line) :-
+  call_target(CM, CQ, Callee, TM, TQ, "bound_method", Line),
+  call_argument(CM, CQ, Callee, Position, "", ArgExpr, Line),
+  Position > 0,
+  ParamPosition = Position + 1,
+  function_param(TM, TQ, Param, _, ParamPosition, _).
+
+call_parameter_binding(CM, CQ, TM, TQ, ArgExpr, Param, Line) :-
+  call_target(CM, CQ, Callee, TM, TQ, _, Line),
+  call_argument(CM, CQ, Callee, 0, Param, ArgExpr, Line),
+  function_param(TM, TQ, Param, _, _, _).
+
+call_dataclass_argument(CM, CQ, TM, TQ, ArgExpr, Param, DM, D, Line) :-
+  call_parameter_binding(CM, CQ, TM, TQ, ArgExpr, Param, Line),
+  resolved_param_type_ref(CM, CQ, ArgExpr, DM, D),
+  resolved_param_type_ref(TM, TQ, Param, DM, D),
+  dataclass(DM, D, _, _).
+
+call_dataclass_argument(CM, CQ, TM, TQ, ArgExpr, Param, DM, D, Line) :-
+  call_parameter_binding(CM, CQ, TM, TQ, ArgExpr, Param, Line),
+  local_alias_reaches(CM, CQ, ArgExpr, SourceParam),
+  resolved_param_type_ref(CM, CQ, SourceParam, DM, D),
+  resolved_param_type_ref(TM, TQ, Param, DM, D),
+  dataclass(DM, D, _, _).
+
+call_dataclass_argument(CM, CQ, TM, TQ, ArgExpr, Param, DM, D, Line) :-
+  call_parameter_binding(CM, CQ, TM, TQ, ArgExpr, Param, Line),
+  resolved_local_dataclass_value(CM, CQ, ArgExpr, DM, D, _),
+  resolved_param_type_ref(TM, TQ, Param, DM, D),
+  dataclass(DM, D, _, _).
+
+semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, "constructor_arg") :-
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  field_flows_to_constructor_arg(FM, Q, SourceParam, SourceField, Target, TargetField, _),
+  dataclass(TM, Target, _, _),
+  dataclass_field(TM, Target, TargetField, _, _, _, _, _, _).
+
+semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, "local_constructor_arg") :-
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  local_depends_on_field(FM, Q, Local, SourceParam, SourceField, _),
+  field_flows_to_constructor_arg(FM, Q, Local, SourceField, Target, TargetField, _),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  dataclass(TM, Target, _, _),
+  dataclass_field(TM, Target, TargetField, _, _, _, _, _, _).
+
+semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, "string_composition") :-
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  constructor_arg_string_composition(FM, Q, Target, TargetField, _, _).
+
+function_summary_input_to_output(FM, Q, SM, Source, SourceField, TM, Target, TargetField, Kind) :-
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, Kind).
+
+interprocedural_local_field_flow(FM, Q, Local, SM, Source, SourceField, TM, Target, TargetField) :-
+  resolved_local_dataclass_value(FM, Q, Local, TM, Target, _),
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  field_flows_to_constructor_arg(FM, Q, SourceParam, SourceField, Target, TargetField, _),
+  dataclass_field(TM, Target, TargetField, _, _, _, _, _, _).
+
+interprocedural_local_field_flow(FM, Q, Local, SM, Source, SourceField, TM, Target, TargetField) :-
+  resolved_local_dataclass_value(FM, Q, Local, TM, Target, _),
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  local_depends_on_field(FM, Q, LocalDep, SourceParam, SourceField, _),
+  field_flows_to_constructor_arg(FM, Q, LocalDep, SourceField, Target, TargetField, _),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  dataclass_field(TM, Target, TargetField, _, _, _, _, _, _).
+
+interprocedural_local_field_flow(FM, Q, Local, SM, Source, SourceField, TM, Target, TargetField) :-
+  resolved_call_result_assigned(FM, Q, Local, CalleeModule, CalleeQ, Line),
+  call_dataclass_argument(FM, Q, CalleeModule, CalleeQ, _, _, SM, Source, Line),
+  function_summary_input_to_output(CalleeModule, CalleeQ, SM, Source, SourceField, TM, Target, TargetField, _).
+
+interprocedural_local_field_flow(FM, Q, Local, SM, Source, SourceField, TM, Target, TargetField) :-
+  resolved_call_result_assigned(FM, Q, Local, CalleeModule, CalleeQ, Line),
+  call_parameter_binding(FM, Q, CalleeModule, CalleeQ, ArgExpr, CalleeParam, Line),
+  interprocedural_local_field_flow(FM, Q, ArgExpr, SM, Source, SourceField, MidModule, MidClass, MidField),
+  resolved_param_type_ref(CalleeModule, CalleeQ, CalleeParam, MidModule, MidClass),
+  function_summary_input_to_output(CalleeModule, CalleeQ, MidModule, MidClass, MidField, TM, Target, TargetField, _).
+
+function_summary_input_to_output(FM, Q, SM, Source, SourceField, TM, Target, TargetField, "return_call") :-
+  resolved_return_call(FM, Q, CalleeModule, CalleeQ, Line),
+  call_dataclass_argument(FM, Q, CalleeModule, CalleeQ, _, _, SM, Source, Line),
+  function_summary_input_to_output(CalleeModule, CalleeQ, SM, Source, SourceField, TM, Target, TargetField, _).
+
+function_summary_input_to_output(FM, Q, SM, Source, SourceField, TM, Target, TargetField, "return_call_local") :-
+  resolved_return_call(FM, Q, CalleeModule, CalleeQ, Line),
+  call_parameter_binding(FM, Q, CalleeModule, CalleeQ, ArgExpr, CalleeParam, Line),
+  interprocedural_local_field_flow(FM, Q, ArgExpr, SM, Source, SourceField, MidModule, MidClass, MidField),
+  resolved_param_type_ref(CalleeModule, CalleeQ, CalleeParam, MidModule, MidClass),
+  function_summary_input_to_output(CalleeModule, CalleeQ, MidModule, MidClass, MidField, TM, Target, TargetField, _).
+
+function_summary_input_to_output(FM, Q, SM, Source, SourceField, TM, Target, TargetField, "return_local") :-
+  return_local(FM, Q, Local, _),
+  interprocedural_local_field_flow(FM, Q, Local, SM, Source, SourceField, TM, Target, TargetField).
+
+interprocedural_method_transform(CM, Class, Q, SM, Source, TM, Target) :-
+  method_of_class(CM, Class, Q),
+  function_summary_input_to_output(CM, Q, SM, Source, _, TM, Target, _, _),
+  dataclass(SM, Source, _, _),
+  dataclass(TM, Target, _, _),
+  SM != TM.
+
+interprocedural_method_transform(CM, Class, Q, SM, Source, TM, Target) :-
+  method_of_class(CM, Class, Q),
+  function_summary_input_to_output(CM, Q, SM, Source, _, TM, Target, _, _),
+  dataclass(SM, Source, _, _),
+  dataclass(TM, Target, _, _),
+  SM = TM,
+  Source != Target.
+
+composed_semantic_field_flow(SM, Source, SourceField, TM, Target, TargetField) :-
+  semantic_field_flow(_, _, SM, Source, SourceField, TM, Target, TargetField, _).
+
+composed_semantic_field_flow(SM, Source, SourceField, TM, Target, TargetField) :-
+  semantic_field_flow(_, _, SM, Source, SourceField, MidModule, MidClass, MidField, _),
+  composed_semantic_field_flow(MidModule, MidClass, MidField, TM, Target, TargetField).
+
+interprocedural_field_flow(SM, Source, SourceField, TM, Target, TargetField) :-
+  function_summary_input_to_output(_, _, SM, Source, SourceField, TM, Target, TargetField, _).
+
+interprocedural_field_flow(SM, Source, SourceField, TM, Target, TargetField) :-
+  function_summary_input_to_output(_, _, SM, Source, SourceField, MidModule, MidClass, MidField, _),
+  interprocedural_field_flow(MidModule, MidClass, MidField, TM, Target, TargetField).
+
+multi_hop_interprocedural_field_flow(SM, Source, SourceField, TM, Target, TargetField) :-
+  function_summary_input_to_output(_, _, SM, Source, SourceField, MidModule, MidClass, MidField, _),
+  interprocedural_field_flow(MidModule, MidClass, MidField, TM, Target, TargetField).
+
+observable_output_slice(SM, Source, SourceField, TM, Target, TargetField, "string_output") :-
+  interprocedural_field_flow(SM, Source, SourceField, TM, Target, TargetField),
+  dataclass_field(TM, Target, TargetField, "str", _, _, _, _, _).
+
+observable_output_slice(SM, Source, SourceField, TM, Target, TargetField, "optional_string_output") :-
+  interprocedural_field_flow(SM, Source, SourceField, TM, Target, TargetField),
+  dataclass_field(TM, Target, TargetField, "Optional[str]", _, _, _, _, _).
+
+observable_output_slice(SM, Source, SourceField, TM, Target, TargetField, "optional_string_output") :-
+  interprocedural_field_flow(SM, Source, SourceField, TM, Target, TargetField),
+  dataclass_field(TM, Target, TargetField, "str | None", _, _, _, _, _).
+
+observable_output_slice(SM, Source, SourceField, TM, Target, TargetField, "collection_output") :-
+  interprocedural_field_flow(SM, Source, SourceField, TM, Target, TargetField),
+  dataclass_field(TM, Target, TargetField, Type, _, _, _, _, _),
+  Type = "list[str]".
+
+backward_output_slice(TM, Target, TargetField, SM, Source, SourceField, SliceKind) :-
+  observable_output_slice(SM, Source, SourceField, TM, Target, TargetField, SliceKind).
+
+function_backward_slice(FM, Q, "dataclass_output", TM, Target, TargetField, SM, Source, SourceField) :-
+  function_summary_input_to_output(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _).
+
+external_call_field_slice(FM, Q, Callee, ArgExpr, SM, Source, SourceField, Line) :-
+  call_argument(FM, Q, Callee, _, _, ArgExpr, Line),
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  ArgExpr = ParamField,
+  ParamField = cat(SourceParam, cat(".", SourceField)).
+
+external_call_field_slice(FM, Q, Callee, ArgExpr, SM, Source, SourceField, Line) :-
+  call_argument(FM, Q, Callee, _, _, ArgExpr, Line),
+  local_depends_on_field(FM, Q, ArgExpr, SourceParam, SourceField, _),
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _).
+
+external_call_field_slice(FM, Q, Callee, ArgExpr, SM, Source, SourceField, Line) :-
+  call_argument(FM, Q, Callee, _, _, ArgExpr, Line),
+  interprocedural_local_field_flow(FM, Q, ArgExpr, SM, Source, SourceField, _, _, _).
+
+control_dependence_slice(FM, Q, ControlExpr, SM, Source, SourceField, "returns_dataclass", Target, EffectLine) :-
+  condition_atom(FM, Q, ControlExpr, _, GuardLine),
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  ControlExpr = ParamField,
+  ParamField = cat(SourceParam, cat(".", SourceField)),
+  resolved_returns_dataclass(FM, Q, _, Target, EffectLine),
+  GuardLine <= EffectLine.
+
+control_dependence_slice(FM, Q, ControlExpr, SM, Source, SourceField, "raises_exception", ExceptionType, EffectLine) :-
+  condition_atom(FM, Q, ControlExpr, _, GuardLine),
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  ControlExpr = ParamField,
+  ParamField = cat(SourceParam, cat(".", SourceField)),
+  raises_exception(FM, Q, ExceptionType, EffectLine),
+  GuardLine <= EffectLine.
+
+control_dependence_slice(FM, Q, ControlExpr, SM, Source, SourceField, "protocol_event", EventKind, EffectLine) :-
+  condition_atom(FM, Q, ControlExpr, _, GuardLine),
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  ControlExpr = ParamField,
+  ParamField = cat(SourceParam, cat(".", SourceField)),
+  call_protocol_event(FM, Q, _, EventKind, _, EffectLine),
+  GuardLine <= EffectLine.
+
+observable_required_field(FM, Q, SM, Source, SourceField, TM, Target, TargetField) :-
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  dataclass_field(SM, Source, SourceField, _, 0, 0, _, _, _),
+  dataclass_field(TM, Target, TargetField, "str", _, _, _, _, _).
+
+observable_required_field(FM, Q, SM, Source, SourceField, TM, Target, TargetField) :-
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  dataclass_field(SM, Source, SourceField, _, 0, 0, _, _, _),
+  dataclass_field(TM, Target, TargetField, "Optional[str]", _, _, _, _, _).
+
+observable_required_field(FM, Q, SM, Source, SourceField, TM, Target, TargetField) :-
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  dataclass_field(SM, Source, SourceField, _, 0, 0, _, _, _),
+  dataclass_field(TM, Target, TargetField, "str | None", _, _, _, _, _).
+
+lossy_required_field_candidate(FM, Q, SM, Source, SourceField, TM, Target) :-
+  resolved_param_type_ref(FM, Q, _, SM, Source),
+  resolved_returns_dataclass(FM, Q, TM, Target, _),
+  dataclass_field(SM, Source, SourceField, _, 0, 0, _, _, _),
+  dataclass(TM, Target, _, _),
+  !semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, _, _).
+
+dataclass_bool_literal(FM, Q, TM, Target, Field, Value) :-
+  return_constructor_arg_literal(FM, Q, Target, Field, "bool", Value, _),
+  dataclass_field(TM, Target, Field, "bool", _, _, _, _, _).
+
+dataclass_bool_literal(FM, Q, TM, Target, Field, Value) :-
+  constructor_arg_literal(FM, Q, Target, Field, "bool", Value, _),
+  dataclass_field(TM, Target, Field, "bool", _, _, _, _, _).
+
+dataclass_string_literal(FM, Q, TM, Target, Field, Value) :-
+  return_constructor_arg_literal(FM, Q, Target, Field, "str", Value, _),
+  dataclass_field(TM, Target, Field, "str", _, _, _, _, _).
+
+dataclass_string_literal(FM, Q, TM, Target, Field, Value) :-
+  constructor_arg_literal(FM, Q, Target, Field, "str", Value, _),
+  dataclass_field(TM, Target, Field, "str", _, _, _, _, _).
+
+string_composition_target(FM, Q, TM, Target, Field, Kind) :-
+  constructor_arg_string_composition(FM, Q, Target, Field, Kind, _),
+  dataclass_field(TM, Target, Field, _, _, _, _, _, _).
+
+string_composition_target(FM, Q, TM, Target, Field, Kind) :-
+  return_arg_string_composition(FM, Q, Target, Field, Kind, _),
+  dataclass_field(TM, Target, Field, _, _, _, _, _, _).
+
+numeric_bound(FM, Q, Expr, "upper_inclusive", Value, Line) :-
+  numeric_compare(FM, Q, Expr, "le", Value, Line).
+
+numeric_bound(FM, Q, Expr, "upper_exclusive", Value, Line) :-
+  numeric_compare(FM, Q, Expr, "lt", Value, Line).
+
+numeric_bound(FM, Q, Expr, "lower_inclusive", Value, Line) :-
+  numeric_compare(FM, Q, Expr, "ge", Value, Line).
+
+numeric_bound(FM, Q, Expr, "lower_exclusive", Value, Line) :-
+  numeric_compare(FM, Q, Expr, "gt", Value, Line).
+
+numeric_bound(FM, Q, Expr, "upper_exclusive", Value, Line) :-
+  string_slice_upper_bound(FM, Q, Expr, Value, Line).
+
+abstract_value_state(FM, Q, Expr, "nullness", "maybe_none", "optional_field", 0) :-
+  resolved_param_type_ref(FM, Q, Param, DM, D),
+  dataclass_field(DM, D, Field, _, 1, _, _, _, _),
+  Expr = ParamField,
+  ParamField = cat(Param, cat(".", Field)).
+
+abstract_value_state(FM, Q, Expr, "nullness", "non_null", State, Line) :-
+  condition_atom(FM, Q, Expr, State, Line),
+  State = "truthy".
+
+abstract_value_state(FM, Q, Expr, "nullness", "non_null", State, Line) :-
+  condition_atom(FM, Q, Expr, State, Line),
+  State = "non_null".
+
+abstract_value_state(FM, Q, Expr, "nullness", "maybe_none", State, Line) :-
+  condition_atom(FM, Q, Expr, State, Line),
+  State = "falsy".
+
+abstract_value_state(FM, Q, Expr, "nullness", "is_none", State, Line) :-
+  condition_atom(FM, Q, Expr, State, Line),
+  State = "is_none".
+
+abstract_value_state(FM, Q, Expr, "emptiness", "non_empty", "truthy_guard", Line) :-
+  condition_atom(FM, Q, Expr, "truthy", Line).
+
+abstract_value_state(FM, Q, Expr, "emptiness", "maybe_empty", "falsy_guard", Line) :-
+  condition_atom(FM, Q, Expr, "falsy", Line).
+
+abstract_numeric_state(FM, Q, Expr, "string_length", BoundKind, Value, Line) :-
+  len_call(FM, Q, Expr, _),
+  numeric_bound(FM, Q, LenExpr, BoundKind, Value, Line),
+  LenExpr = cat("len(", cat(Expr, ")")).
+
+abstract_value_state(FM, Q, Field, "status", "success", "bool_literal_true", 0) :-
+  dataclass_bool_literal(FM, Q, _, _, Field, Value),
+  Field = "success",
+  Value = "True".
+
+abstract_value_state(FM, Q, Field, "status", "failure", "bool_literal_false", 0) :-
+  dataclass_bool_literal(FM, Q, _, _, Field, Value),
+  Field = "success",
+  Value = "False".
+
+guarded_nonnull_before(FM, Q, Expr, BeforeLine) :-
+  attribute_read(FM, Q, Owner, Field, BeforeLine),
+  Expr = cat(Owner, cat(".", Field)),
+  condition_atom(FM, Q, Expr, "truthy", GuardLine),
+  GuardLine <= BeforeLine.
+
+guarded_nonnull_before(FM, Q, Expr, BeforeLine) :-
+  attribute_read(FM, Q, Owner, Field, BeforeLine),
+  Expr = cat(Owner, cat(".", Field)),
+  condition_atom(FM, Q, Expr, "non_null", GuardLine),
+  GuardLine <= BeforeLine.
+
+validation_before(FM, Q, BeforeLine) :-
+  attribute_read(FM, Q, _, _, BeforeLine),
+  call_protocol_event(FM, Q, _, "validate", _, ValidateLine),
+  ValidateLine < BeforeLine.
+
+nullable_use_before_guard_candidate(FM, Q, DM, D, Field, UseLine, "optional_field_read_without_prior_guard_or_validation") :-
+  resolved_param_type_ref(FM, Q, Param, DM, D),
+  dataclass_field(DM, D, Field, _, 1, _, _, _, _),
+  attribute_read(FM, Q, Param, Field, UseLine),
+  Expr = cat(Param, cat(".", Field)),
+  !guarded_nonnull_before(FM, Q, Expr, UseLine),
+  !validation_before(FM, Q, UseLine).
+
+prior_protocol_event(FM, Q, EventKind, BeforeLine) :-
+  call_protocol_event(FM, Q, _, _, _, BeforeLine),
+  call_protocol_event(FM, Q, _, EventKind, _, Line),
+  Line < BeforeLine.
+
+typestate_transition(FM, Q, Receiver, "unknown", "authenticated", "authenticate", Line) :-
+  call_protocol_event(FM, Q, Receiver, "authenticate", _, Line).
+
+typestate_transition(FM, Q, Receiver, "unknown", "validated", "validate", Line) :-
+  call_protocol_event(FM, Q, Receiver, "validate", _, Line).
+
+typestate_transition(FM, Q, Receiver, "authenticated", "published", "publish", Line) :-
+  call_protocol_event(FM, Q, Receiver, "publish", _, Line),
+  prior_protocol_event(FM, Q, "authenticate", Line).
+
+typestate_transition(FM, Q, Receiver, "validated", "published", "publish", Line) :-
+  call_protocol_event(FM, Q, Receiver, "publish", _, Line),
+  prior_protocol_event(FM, Q, "validate", Line).
+
+typestate_transition(FM, Q, Receiver, "unknown", "opened", "open", Line) :-
+  call_protocol_event(FM, Q, Receiver, "open", _, Line).
+
+typestate_transition(FM, Q, Receiver, "opened", "closed", "close", Line) :-
+  call_protocol_event(FM, Q, Receiver, "close", _, Line),
+  prior_protocol_event(FM, Q, "open", Line).
+
+protocol_obligation_candidate(FM, Q, Receiver, "authenticate_or_validate_before_publish", Line, "publish_without_prior_authenticate_or_validate") :-
+  call_protocol_event(FM, Q, Receiver, "publish", _, Line),
+  !prior_protocol_event(FM, Q, "authenticate", Line),
+  !prior_protocol_event(FM, Q, "validate", Line).
+
+protocol_obligation_candidate(FM, Q, Receiver, "open_before_close", Line, "close_without_prior_open") :-
+  call_protocol_event(FM, Q, Receiver, "close", _, Line),
+  !prior_protocol_event(FM, Q, "open", Line).
+
+typestate_protocol_violation(FM, Q, Receiver, Violation, "publish", Line) :-
+  protocol_obligation_candidate(FM, Q, Receiver, Violation, Line, "publish_without_prior_authenticate_or_validate").
+
+typestate_protocol_violation(FM, Q, Receiver, Violation, "close", Line) :-
+  protocol_obligation_candidate(FM, Q, Receiver, Violation, Line, "close_without_prior_open").
+
+boundary_test_candidate(FM, Q, Expr, "below", TestValue) :-
+  numeric_bound(FM, Q, Expr, _, Bound, _),
+  TestValue = Bound - 1.
+
+boundary_test_candidate(FM, Q, Expr, "at", Bound) :-
+  numeric_bound(FM, Q, Expr, _, Bound, _).
+
+boundary_test_candidate(FM, Q, Expr, "above", TestValue) :-
+  numeric_bound(FM, Q, Expr, _, Bound, _),
+  TestValue = Bound + 1.
+
+numeric_bound_conflict_candidate(FM, Q, Expr, Lower, Upper) :-
+  numeric_bound(FM, Q, Expr, "lower_inclusive", Lower, _),
+  numeric_bound(FM, Q, Expr, "upper_inclusive", Upper, _),
+  Lower > Upper.
+
+max_length_bound_kind("upper_inclusive").
+max_length_bound_kind("upper_exclusive").
+
+boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, SM, Source, SourceField, TM, Target, TargetField, "truncate_or_include") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  Expr = SourceParamField,
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  SourceParamField = cat(SourceParam, cat(".", SourceField)).
+
+boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, SM, Source, SourceField, TM, Target, TargetField, "input_length_to_output_max_length") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  Expr = LenSourceParamField,
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  LenSourceParamField = cat("len(", cat(SourceParam, cat(".", cat(SourceField, ")")))).
+
+boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, SM, Source, SourceField, "<primitive>", "str", "<return>", "max_length") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  resolved_param_type_ref(FM, Q, SourceParam, SM, Source),
+  dataclass_field(SM, Source, SourceField, _, _, _, _, _, _),
+  attribute_read(FM, Q, SourceParam, SourceField, _),
+  Expr = LocalName,
+  local_depends_on_field(FM, Q, LocalName, SourceParam, SourceField, _).
+
+boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, SM, Source, SourceField, TM, Target, TargetField, "split_or_single") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  semantic_field_flow(FM, Q, SM, Source, SourceField, TM, Target, TargetField, _),
+  function_name(FM, Q, "_build_caption_thread"),
+  Target = "CaptionThread".
+
+helper_boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, Param, "return", "max_length") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  function_param(FM, Q, Param, Type, _, _),
+  Type = "str",
+  Expr = LenParam,
+  LenParam = cat("len(", cat(Param, ")")).
+
+helper_boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, Param, "return", "max_length") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  function_param(FM, Q, Param, Type, _, _),
+  Type = "str",
+  Param != "self",
+  Expr = LenLocal,
+  LenLocal = cat("len(", cat(Local, ")")),
+  local_depends_on_field(FM, Q, Local, Source, _, _),
+  Source != "self".
+
+helper_boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, Param, "return", "truncate_or_include") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  function_param(FM, Q, Param, Type, _, _),
+  Type = "str",
+  Expr = Param.
+
+helper_boundary_behavior(FM, Class, Q, Expr, BoundKind, Bound, Param, "return", "truncate_or_include") :-
+  method_of_class(FM, Class, Q),
+  numeric_bound(FM, Q, Expr, BoundKind, Bound, _),
+  max_length_bound_kind(BoundKind),
+  function_param(FM, Q, Param, Type, _, _),
+  Type = "str",
+  Param != "self",
+  Expr = Local,
+  local_depends_on_field(FM, Q, Local, Source, _, _),
+  Source != "self".
