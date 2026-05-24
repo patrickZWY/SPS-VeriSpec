@@ -109,6 +109,37 @@ class InterproceduralCase:
     expected_value: object
 
 
+@dataclass(frozen=True)
+class DataclassSchemaCase:
+    id: str
+    module_name: str
+    class_name: str
+    is_frozen: bool
+    options: dict[str, str]
+    fields: list[DataclassField]
+
+
+@dataclass(frozen=True)
+class DataclassConstructorCase:
+    id: str
+    module_name: str
+    class_name: str
+    required_kwargs: dict[str, object]
+    required_fields: list[str]
+    defaulted_fields: list[str]
+    factory_fields: list[str]
+
+
+@dataclass(frozen=True)
+class ConversionFunctionCase:
+    id: str
+    module_name: str
+    qualified_name: str
+    function_name: str
+    owner_class: str
+    profile: str
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate portable pytest tests from SPS-VeriSpec property outputs."
@@ -132,6 +163,15 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=100,
         help="Maximum executable cases to emit.",
+    )
+    parser.add_argument(
+        "--import-prefix",
+        default="",
+        help=(
+            "Optional package prefix to prepend to generated imports. Use this when "
+            "analysis ran on an inner package directory but tests run with the "
+            "parent source root on PYTHONPATH, e.g. --import-prefix transformers."
+        ),
     )
     return parser.parse_args()
 
@@ -166,6 +206,26 @@ def load_dataclass_fields(facts_dir: Path) -> dict[tuple[str, str], list[Datacla
     return fields
 
 
+def load_dataclass_frozen_flags(facts_dir: Path) -> dict[tuple[str, str], bool]:
+    flags: dict[tuple[str, str], bool] = {}
+    for row in read_tsv(facts_dir / "dataclass.facts"):
+        if len(row) < 3:
+            continue
+        module_name, class_name, is_frozen = row[:3]
+        flags[(module_name, class_name)] = is_frozen == "1"
+    return flags
+
+
+def load_dataclass_options(facts_dir: Path) -> dict[tuple[str, str], dict[str, str]]:
+    options: dict[tuple[str, str], dict[str, str]] = {}
+    for row in read_tsv(facts_dir / "dataclass_option.facts"):
+        if len(row) < 4:
+            continue
+        module_name, class_name, option_name, option_value = row[:4]
+        options.setdefault((module_name, class_name), {})[option_name] = option_value
+    return options
+
+
 def load_function_params(facts_dir: Path) -> dict[tuple[str, str], list[FunctionParam]]:
     params: dict[tuple[str, str], list[FunctionParam]] = {}
     for row in read_tsv(facts_dir / "function_param.facts"):
@@ -194,6 +254,16 @@ def load_method_owners(facts_dir: Path) -> dict[tuple[str, str], str]:
         module_name, class_name, qualified_name = row[:3]
         owners[(module_name, qualified_name)] = class_name
     return owners
+
+
+def load_function_names(facts_dir: Path) -> dict[tuple[str, str], str]:
+    names: dict[tuple[str, str], str] = {}
+    for row in read_tsv(facts_dir / "function_name.facts"):
+        if len(row) < 3:
+            continue
+        module_name, qualified_name, function_name = row[:3]
+        names[(module_name, qualified_name)] = function_name
+    return names
 
 
 def load_resolved_params(facts_dir: Path) -> dict[tuple[str, str, str, str], str]:
@@ -365,6 +435,14 @@ def python_dict_literal(values: dict[str, object]) -> str:
     return "{" + rendered + "}"
 
 
+def prefixed_module_name(module_name: str, import_prefix: str) -> str:
+    if not import_prefix or module_name == "<root>":
+        return module_name
+    if module_name == import_prefix or module_name.startswith(f"{import_prefix}."):
+        return module_name
+    return f"{import_prefix}.{module_name}" if module_name else import_prefix
+
+
 def safe_id(*parts: str) -> str:
     text = "-".join(parts)
     text = re.sub(r"[^A-Za-z0-9_.-]+", "-", text).strip("-")
@@ -378,29 +456,37 @@ def sample_value(field: DataclassField, variant: str = "default") -> object:
     if variant == "none":
         return None
     if variant == "empty":
+        if "list" in type_repr:
+            return []
+        if "dict" in type_repr:
+            return {}
+        if "set" in type_repr:
+            return set()
+        if "tuple" in type_repr:
+            return ()
         return ""
 
+    if "dict" in type_repr or "mapping" in type_repr:
+        return {"generated_key": f"generated_{name}"}
     if "list" in type_repr:
-        return ["generatedtag", "secondtag"]
+        return [f"generated_{name}_item", f"generated_{name}_second"]
+    if "set" in type_repr:
+        return {f"generated_{name}_item"}
+    if "tuple" in type_repr:
+        return (f"generated_{name}_item",)
     if "bool" in type_repr:
         return True
+    if "float" in type_repr:
+        return 3.5
     if "int" in type_repr:
         return 7
+    if "bytes" in type_repr:
+        return b"generated"
 
     if "url" in name or "link" in name:
         return "https://example.com/generated-value"
-    if name == "location":
-        return "generatedcity, MA"
-    if name == "breed":
-        return "generatedbreed"
-    if name == "species":
-        return "generatedspecies"
-    if name == "name":
-        return "generatedname"
-    if name in {"description", "text", "caption_text"}:
-        return "generatedtext"
-    if name == "tag_suffix":
-        return "\n\n#generatedtag"
+    if "path" in name:
+        return "/tmp/generated-value"
 
     return f"generated_{name}"
 
@@ -424,6 +510,116 @@ def make_input_kwargs(
         else:
             kwargs[field.field_name] = sample_value(field)
     return kwargs
+
+
+def make_required_kwargs(fields: list[DataclassField]) -> dict[str, object]:
+    return {
+        field.field_name: sample_value(field)
+        for field in fields
+        if not field.has_default
+    }
+
+
+def build_schema_cases(
+    fields: dict[tuple[str, str], list[DataclassField]],
+    frozen_flags: dict[tuple[str, str], bool],
+    options: dict[tuple[str, str], dict[str, str]],
+    max_cases: int,
+) -> list[DataclassSchemaCase]:
+    cases: list[DataclassSchemaCase] = []
+    for module_name, class_name in sorted(frozen_flags):
+        if len(cases) >= max_cases:
+            break
+        class_fields = fields.get((module_name, class_name), [])
+        cases.append(
+            DataclassSchemaCase(
+                id=safe_id("schema", module_name, class_name),
+                module_name=module_name,
+                class_name=class_name,
+                is_frozen=frozen_flags[(module_name, class_name)],
+                options=options.get((module_name, class_name), {}),
+                fields=class_fields,
+            )
+        )
+    return cases
+
+
+def build_constructor_cases(
+    fields: dict[tuple[str, str], list[DataclassField]],
+    max_cases: int,
+) -> list[DataclassConstructorCase]:
+    cases: list[DataclassConstructorCase] = []
+    for (module_name, class_name), class_fields in sorted(fields.items()):
+        if len(cases) >= max_cases:
+            break
+        required_kwargs = make_required_kwargs(class_fields)
+        defaulted_fields = [
+            field.field_name for field in class_fields if field.has_default
+        ]
+        factory_fields = [
+            field.field_name
+            for field in class_fields
+            if field.has_default and field.default_kind == "factory"
+        ]
+        if not required_kwargs and not defaulted_fields and not factory_fields:
+            continue
+        cases.append(
+            DataclassConstructorCase(
+                id=safe_id("constructor", module_name, class_name),
+                module_name=module_name,
+                class_name=class_name,
+                required_kwargs=required_kwargs,
+                required_fields=list(required_kwargs),
+                defaulted_fields=defaulted_fields,
+                factory_fields=factory_fields,
+            )
+        )
+    return cases
+
+
+def build_conversion_function_cases(
+    function_names: dict[tuple[str, str], str],
+    owners: dict[tuple[str, str], str],
+    max_cases: int,
+) -> list[ConversionFunctionCase]:
+    cases: list[ConversionFunctionCase] = []
+    profile_by_name = {
+        "from_dict": "dict_to_dataclass",
+        "structure": "dict_to_dataclass",
+        "to_dict": "dataclass_to_dict",
+        "asdict": "dataclass_to_dict",
+        "unstructure": "dataclass_to_dict",
+    }
+    seen: set[tuple[str, str, str]] = set()
+
+    for (module_name, qualified_name), function_name in sorted(function_names.items()):
+        if len(cases) >= max_cases:
+            break
+        profile = profile_by_name.get(function_name)
+        if profile is None:
+            continue
+        owner_class = owners.get((module_name, qualified_name), "")
+        if owner_class and function_name not in {"structure", "unstructure"}:
+            continue
+        if owner_class and owner_class not in {"Converter", "BaseConverter"}:
+            continue
+        if owner_class and method_name(qualified_name).startswith("_"):
+            continue
+        key = (module_name, qualified_name, profile)
+        if key in seen:
+            continue
+        seen.add(key)
+        cases.append(
+            ConversionFunctionCase(
+                id=safe_id("conversion", profile, module_name, qualified_name),
+                module_name=module_name,
+                qualified_name=qualified_name,
+                function_name=function_name,
+                owner_class=owner_class,
+                profile=profile,
+            )
+        )
+    return cases
 
 
 def field_by_name(
@@ -746,7 +942,7 @@ def load_interprocedural_cases(
     return cases, skipped
 
 
-def render_cases(cases: list[ExecutableCase]) -> str:
+def render_cases(cases: list[ExecutableCase], import_prefix: str = "") -> str:
     entries = []
     for case in cases:
         entries.append(
@@ -754,10 +950,10 @@ def render_cases(cases: list[ExecutableCase]) -> str:
                 [
                     "    {",
                     f"        'id': {case.id!r},",
-                    f"        'class_module': {case.class_module!r},",
+                    f"        'class_module': {prefixed_module_name(case.class_module, import_prefix)!r},",
                     f"        'class_name': {case.class_name!r},",
                     f"        'method_name': {case.method_name!r},",
-                    f"        'source_module': {case.source_module!r},",
+                    f"        'source_module': {prefixed_module_name(case.source_module, import_prefix)!r},",
                     f"        'source_class': {case.source_class!r},",
                     f"        'source_field': {case.source_field!r},",
                     f"        'source_type': {case.source_type!r},",
@@ -773,7 +969,7 @@ def render_cases(cases: list[ExecutableCase]) -> str:
     return "[\n" + ",\n".join(entries) + "\n]"
 
 
-def render_test_file(cases: list[ExecutableCase]) -> str:
+def render_test_file(cases: list[ExecutableCase], import_prefix: str = "") -> str:
     return f'''"""
 Generated by tools/generate_pytest_from_properties.py.
 
@@ -791,7 +987,7 @@ import importlib
 import pytest
 
 
-CASES = {render_cases(cases)}
+CASES = {render_cases(cases, import_prefix)}
 
 
 def _load_class(module_name, class_name):
@@ -871,7 +1067,10 @@ def test_generated_dataclass_transform_property(case):
 '''
 
 
-def render_helper_boundary_cases(cases: list[HelperBoundaryCase]) -> str:
+def render_helper_boundary_cases(
+    cases: list[HelperBoundaryCase],
+    import_prefix: str = "",
+) -> str:
     entries = []
     for case in cases:
         entries.append(
@@ -879,7 +1078,7 @@ def render_helper_boundary_cases(cases: list[HelperBoundaryCase]) -> str:
                 [
                     "    {",
                     f"        'id': {case.id!r},",
-                    f"        'module_name': {case.module_name!r},",
+                    f"        'module_name': {prefixed_module_name(case.module_name, import_prefix)!r},",
                     f"        'class_name': {case.class_name!r},",
                     f"        'method_name': {case.method_name!r},",
                     f"        'param_name': {case.param_name!r},",
@@ -894,7 +1093,10 @@ def render_helper_boundary_cases(cases: list[HelperBoundaryCase]) -> str:
     return "[\n" + ",\n".join(entries) + "\n]"
 
 
-def render_helper_boundary_test_file(cases: list[HelperBoundaryCase]) -> str:
+def render_helper_boundary_test_file(
+    cases: list[HelperBoundaryCase],
+    import_prefix: str = "",
+) -> str:
     return f'''"""
 Generated by tools/generate_pytest_from_properties.py.
 
@@ -911,7 +1113,7 @@ import importlib
 import pytest
 
 
-HELPER_BOUNDARY_CASES = {render_helper_boundary_cases(cases)}
+HELPER_BOUNDARY_CASES = {render_helper_boundary_cases(cases, import_prefix)}
 
 
 def _load_class(module_name, class_name):
@@ -956,7 +1158,10 @@ def test_generated_helper_boundary(case):
 '''
 
 
-def render_common_ast_cases(cases: list[CommonAstCase]) -> str:
+def render_common_ast_cases(
+    cases: list[CommonAstCase],
+    import_prefix: str = "",
+) -> str:
     entries = []
     for case in cases:
         entries.append(
@@ -965,10 +1170,10 @@ def render_common_ast_cases(cases: list[CommonAstCase]) -> str:
                     "    {",
                     f"        'id': {case.id!r},",
                     f"        'relation_kind': {case.relation_kind!r},",
-                    f"        'module_name': {case.module_name!r},",
+                    f"        'module_name': {prefixed_module_name(case.module_name, import_prefix)!r},",
                     f"        'class_name': {case.class_name!r},",
                     f"        'method_name': {case.method_name!r},",
-                    f"        'source_module': {case.source_module!r},",
+                    f"        'source_module': {prefixed_module_name(case.source_module, import_prefix)!r},",
                     f"        'source_class': {case.source_class!r},",
                     f"        'source_field': {case.source_field!r},",
                     f"        'source_type': {case.source_type!r},",
@@ -981,7 +1186,10 @@ def render_common_ast_cases(cases: list[CommonAstCase]) -> str:
     return "[\n" + ",\n".join(entries) + "\n]"
 
 
-def render_common_ast_test_file(cases: list[CommonAstCase]) -> str:
+def render_common_ast_test_file(
+    cases: list[CommonAstCase],
+    import_prefix: str = "",
+) -> str:
     return f'''"""
 Generated by tools/generate_pytest_from_properties.py.
 
@@ -997,7 +1205,7 @@ import importlib
 import pytest
 
 
-COMMON_AST_CASES = {render_common_ast_cases(cases)}
+COMMON_AST_CASES = {render_common_ast_cases(cases, import_prefix)}
 
 
 def _load_class(module_name, class_name):
@@ -1059,7 +1267,10 @@ def test_generated_common_ast_relation(case):
 '''
 
 
-def render_interprocedural_cases(cases: list[InterproceduralCase]) -> str:
+def render_interprocedural_cases(
+    cases: list[InterproceduralCase],
+    import_prefix: str = "",
+) -> str:
     entries = []
     for case in cases:
         entries.append(
@@ -1067,14 +1278,14 @@ def render_interprocedural_cases(cases: list[InterproceduralCase]) -> str:
                 [
                     "    {",
                     f"        'id': {case.id!r},",
-                    f"        'class_module': {case.class_module!r},",
+                    f"        'class_module': {prefixed_module_name(case.class_module, import_prefix)!r},",
                     f"        'class_name': {case.class_name!r},",
                     f"        'method_name': {case.method_name!r},",
-                    f"        'source_module': {case.source_module!r},",
+                    f"        'source_module': {prefixed_module_name(case.source_module, import_prefix)!r},",
                     f"        'source_class': {case.source_class!r},",
                     f"        'source_field': {case.source_field!r},",
                     f"        'source_type': {case.source_type!r},",
-                    f"        'target_module': {case.target_module!r},",
+                    f"        'target_module': {prefixed_module_name(case.target_module, import_prefix)!r},",
                     f"        'target_class': {case.target_class!r},",
                     f"        'target_field': {case.target_field!r},",
                     f"        'slice_kind': {case.slice_kind!r},",
@@ -1087,7 +1298,10 @@ def render_interprocedural_cases(cases: list[InterproceduralCase]) -> str:
     return "[\n" + ",\n".join(entries) + "\n]"
 
 
-def render_interprocedural_test_file(cases: list[InterproceduralCase]) -> str:
+def render_interprocedural_test_file(
+    cases: list[InterproceduralCase],
+    import_prefix: str = "",
+) -> str:
     return f'''"""
 Generated by tools/generate_pytest_from_properties.py.
 
@@ -1103,7 +1317,7 @@ import importlib
 import pytest
 
 
-INTERPROCEDURAL_CASES = {render_interprocedural_cases(cases)}
+INTERPROCEDURAL_CASES = {render_interprocedural_cases(cases, import_prefix)}
 
 
 def _load_class(module_name, class_name):
@@ -1176,7 +1390,404 @@ def test_generated_interprocedural_observable_slice(case):
 '''
 
 
-def render_hypothesis_test_file(cases: list[ExecutableCase]) -> str:
+def render_schema_cases(
+    cases: list[DataclassSchemaCase],
+    import_prefix: str = "",
+) -> str:
+    entries = []
+    for case in cases:
+        field_entries = []
+        for field in case.fields:
+            field_entries.append(
+                "{"
+                f"'name': {field.field_name!r}, "
+                f"'type_repr': {field.type_repr!r}, "
+                f"'is_optional': {field.is_optional!r}, "
+                f"'has_default': {field.has_default!r}, "
+                f"'default_kind': {field.default_kind!r}"
+                "}"
+            )
+        fields_literal = "[" + ", ".join(field_entries) + "]"
+        entries.append(
+            "\n".join(
+                [
+                    "    {",
+                    f"        'id': {case.id!r},",
+                    f"        'module_name': {prefixed_module_name(case.module_name, import_prefix)!r},",
+                    f"        'class_name': {case.class_name!r},",
+                    f"        'is_frozen': {case.is_frozen!r},",
+                    f"        'options': {python_dict_literal(case.options)},",
+                    f"        'fields': {fields_literal},",
+                    "    }",
+                ]
+            )
+        )
+    return "[\n" + ",\n".join(entries) + "\n]"
+
+
+def render_constructor_cases(
+    cases: list[DataclassConstructorCase],
+    import_prefix: str = "",
+) -> str:
+    entries = []
+    for case in cases:
+        entries.append(
+            "\n".join(
+                [
+                    "    {",
+                    f"        'id': {case.id!r},",
+                    f"        'module_name': {prefixed_module_name(case.module_name, import_prefix)!r},",
+                    f"        'class_name': {case.class_name!r},",
+                    f"        'required_kwargs': {python_dict_literal(case.required_kwargs)},",
+                    f"        'required_fields': {case.required_fields!r},",
+                    f"        'defaulted_fields': {case.defaulted_fields!r},",
+                    f"        'factory_fields': {case.factory_fields!r},",
+                    "    }",
+                ]
+            )
+        )
+    return "[\n" + ",\n".join(entries) + "\n]"
+
+
+def render_dataclass_schema_test_file(
+    schema_cases: list[DataclassSchemaCase],
+    constructor_cases: list[DataclassConstructorCase],
+    import_prefix: str = "",
+) -> str:
+    return f'''"""
+Generated by tools/generate_pytest_from_properties.py.
+
+These tests exercise runtime dataclass schema and constructor behavior. They are
+intended to provide portable executable oracles for dataclass-heavy projects even
+when no project-specific dataclass transform oracle is available.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import importlib
+import types
+import typing
+
+import pytest
+
+
+SCHEMA_CASES = {render_schema_cases(schema_cases, import_prefix)}
+
+
+CONSTRUCTOR_CASES = {render_constructor_cases(constructor_cases, import_prefix)}
+
+
+def _load_class(module_name, class_name):
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError as exc:
+        pytest.skip(f"Cannot import {{module_name}}: {{exc}}")
+    return getattr(module, class_name)
+
+
+def _dataclass_param(cls, name):
+    params = getattr(cls, "__dataclass_params__", None)
+    if params is None or not hasattr(params, name):
+        return None
+    return getattr(params, name)
+
+
+def _sample_for_annotation(annotation, field_name, depth=0):
+    if depth > 2:
+        return None
+    if isinstance(annotation, str):
+        lowered_annotation = annotation.lower()
+        if "str" in lowered_annotation:
+            return f"generated_{{field_name}}"
+        if "bool" in lowered_annotation:
+            return True
+        if "float" in lowered_annotation:
+            return 3.5
+        if "int" in lowered_annotation:
+            return 7
+        if "list" in lowered_annotation:
+            return [f"generated_{{field_name}}_item"]
+        if "dict" in lowered_annotation:
+            return {{"generated_key": f"generated_{{field_name}}"}}
+        return f"generated_{{field_name}}"
+
+    origin = typing.get_origin(annotation)
+    args = typing.get_args(annotation)
+    if origin is types.UnionType or origin is typing.Union:
+        non_none_args = [arg for arg in args if arg is not type(None)]
+        return _sample_for_annotation(non_none_args[0], field_name, depth + 1) if non_none_args else None
+    if origin in {{list, tuple, set, frozenset}}:
+        item_type = args[0] if args else str
+        item = _sample_for_annotation(item_type, f"{{field_name}}_item", depth + 1)
+        if origin is tuple:
+            return (item,)
+        if origin is set:
+            return {{item}}
+        if origin is frozenset:
+            return frozenset({{item}})
+        return [item]
+    if origin is dict:
+        value_type = args[1] if len(args) > 1 else str
+        return {{"generated_key": _sample_for_annotation(value_type, field_name, depth + 1)}}
+    if dataclasses.is_dataclass(annotation):
+        return _instance_from_runtime_fields(annotation, depth + 1)
+    if annotation is str:
+        return f"generated_{{field_name}}"
+    if annotation is bool:
+        return True
+    if annotation is int:
+        return 7
+    if annotation is float:
+        return 3.5
+    if annotation is bytes:
+        return b"generated"
+    return f"generated_{{field_name}}"
+
+
+def _required_runtime_fields(cls):
+    return [
+        field
+        for field in dataclasses.fields(cls)
+        if field.init
+        and field.default is dataclasses.MISSING
+        and field.default_factory is dataclasses.MISSING
+    ]
+
+
+def _instance_from_runtime_fields(cls, depth=0):
+    kwargs = {{
+        field.name: _sample_for_annotation(field.type, field.name, depth)
+        for field in _required_runtime_fields(cls)
+    }}
+    return cls(**kwargs)
+
+
+@pytest.mark.parametrize("case", SCHEMA_CASES, ids=[case["id"] for case in SCHEMA_CASES])
+def test_generated_dataclass_runtime_schema(case):
+    cls = _load_class(case["module_name"], case["class_name"])
+
+    if not dataclasses.is_dataclass(cls):
+        pytest.skip(
+            f"{{cls.__module__}}.{{cls.__qualname__}} is not a runtime dataclass "
+            "in this dependency configuration"
+        )
+
+    assert _dataclass_param(cls, "frozen") == case["is_frozen"]
+
+    runtime_fields = {{field.name: field for field in dataclasses.fields(cls)}}
+    for expected in case["fields"]:
+        name = expected["name"]
+        assert name in runtime_fields
+        runtime_field = runtime_fields[name]
+        has_runtime_default = (
+            runtime_field.default is not dataclasses.MISSING
+            or runtime_field.default_factory is not dataclasses.MISSING
+        )
+        assert has_runtime_default == expected["has_default"]
+        if expected["default_kind"] == "factory":
+            assert runtime_field.default_factory is not dataclasses.MISSING
+
+    for option_name in ("repr", "eq", "order", "unsafe_hash"):
+        expected_value = case["options"].get(option_name)
+        actual_value = _dataclass_param(cls, option_name)
+        if expected_value is not None and actual_value is not None:
+            assert actual_value == (expected_value == "true")
+
+    if case["options"].get("slots") == "true":
+        assert hasattr(cls, "__slots__")
+    if case["options"].get("match_args") == "false":
+        assert not hasattr(cls, "__match_args__")
+
+
+@pytest.mark.parametrize("case", CONSTRUCTOR_CASES, ids=[case["id"] for case in CONSTRUCTOR_CASES])
+def test_generated_dataclass_constructor_defaults(case):
+    cls = _load_class(case["module_name"], case["class_name"])
+
+    if not dataclasses.is_dataclass(cls):
+        pytest.skip(
+            f"{{cls.__module__}}.{{cls.__qualname__}} is not a runtime dataclass "
+            "in this dependency configuration"
+        )
+
+    try:
+        first = _instance_from_runtime_fields(cls)
+        second = _instance_from_runtime_fields(cls)
+    except Exception as exc:
+        pytest.skip(f"Generated constructor fixture is not valid for {{cls.__name__}}: {{exc}}")
+
+    generated_required_fields = [field.name for field in _required_runtime_fields(cls)]
+    for field_name in generated_required_fields:
+        assert hasattr(first, field_name)
+
+    for field_name in case["defaulted_fields"]:
+        assert hasattr(first, field_name)
+
+    for field_name in case["factory_fields"]:
+        first_value = getattr(first, field_name)
+        second_value = getattr(second, field_name)
+        if isinstance(first_value, (list, dict, set)):
+            assert first_value is not second_value
+
+    if generated_required_fields:
+        missing_field = generated_required_fields[0]
+        kwargs = {{
+            field.name: _sample_for_annotation(field.type, field.name)
+            for field in _required_runtime_fields(cls)
+            if field.name != missing_field
+        }}
+        with pytest.raises(TypeError):
+            cls(**kwargs)
+'''
+
+
+def render_conversion_cases(
+    cases: list[ConversionFunctionCase],
+    import_prefix: str = "",
+) -> str:
+    entries = []
+    for case in cases:
+        entries.append(
+            "\n".join(
+                [
+                    "    {",
+                    f"        'id': {case.id!r},",
+                    f"        'module_name': {prefixed_module_name(case.module_name, import_prefix)!r},",
+                    f"        'qualified_name': {case.qualified_name!r},",
+                    f"        'function_name': {case.function_name!r},",
+                    f"        'owner_class': {case.owner_class!r},",
+                    f"        'profile': {case.profile!r},",
+                    "    }",
+                ]
+            )
+        )
+    return "[\n" + ",\n".join(entries) + "\n]"
+
+
+def render_conversion_test_file(
+    cases: list[ConversionFunctionCase],
+    import_prefix: str = "",
+) -> str:
+    return f'''"""
+Generated by tools/generate_pytest_from_properties.py.
+
+These tests exercise generic dataclass conversion APIs such as from_dict,
+structure, to_dict, and unstructure. They define local dataclasses so the target
+library can be tested without relying on project-specific domain models.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import importlib
+
+import pytest
+
+
+CONVERSION_CASES = {render_conversion_cases(cases, import_prefix)}
+
+
+@dataclasses.dataclass
+class GeneratedNested:
+    label: str
+    count: int = 3
+
+
+@dataclasses.dataclass
+class GeneratedItem:
+    name: str
+    enabled: bool
+    tags: list[str]
+    nested: GeneratedNested
+
+
+def _load_callable(case):
+    try:
+        module = importlib.import_module(case["module_name"])
+    except ModuleNotFoundError as exc:
+        pytest.skip(f"Cannot import {{case['module_name']}}: {{exc}}")
+
+    if case["owner_class"]:
+        owner_cls = getattr(module, case["owner_class"])
+        try:
+            owner = owner_cls()
+        except Exception as exc:
+            pytest.skip(f"Cannot instantiate {{case['owner_class']}}: {{exc}}")
+        return getattr(owner, case["function_name"])
+
+    target = module
+    for part in case["qualified_name"].split("."):
+        target = getattr(target, part)
+    return target
+
+
+def _call_first_success(func, attempts):
+    errors = []
+    for args, kwargs in attempts:
+        try:
+            return func(*args, **kwargs)
+        except TypeError as exc:
+            errors.append(str(exc))
+    pytest.skip("No supported conversion signature matched: " + " | ".join(errors[:3]))
+
+
+def _input_data():
+    return {{
+        "name": "generated-name",
+        "enabled": True,
+        "tags": ["alpha", "beta"],
+        "nested": {{"label": "child", "count": 5}},
+    }}
+
+
+@pytest.mark.parametrize("case", CONVERSION_CASES, ids=[case["id"] for case in CONVERSION_CASES])
+def test_generated_dataclass_conversion_profile(case):
+    func = _load_callable(case)
+
+    if case["profile"] == "dict_to_dataclass":
+        data = _input_data()
+        result = _call_first_success(
+            func,
+            [
+                ((), {{"data_class": GeneratedItem, "data": data}}),
+                ((GeneratedItem, data), {{}}),
+                ((data, GeneratedItem), {{}}),
+                ((), {{"cl": GeneratedItem, "obj": data}}),
+            ],
+        )
+        assert dataclasses.is_dataclass(result)
+        assert result.name == data["name"]
+        assert result.enabled is True
+        assert result.tags == data["tags"]
+        assert dataclasses.is_dataclass(result.nested)
+        assert result.nested.label == data["nested"]["label"]
+        return
+
+    item = GeneratedItem(
+        name="generated-name",
+        enabled=True,
+        tags=["alpha", "beta"],
+        nested=GeneratedNested(label="child", count=5),
+    )
+    result = _call_first_success(
+        func,
+        [
+            ((item,), {{}}),
+            ((), {{"obj": item}}),
+        ],
+    )
+    assert isinstance(result, dict)
+    assert result["name"] == item.name
+    assert result["enabled"] is True
+    assert result["tags"] == item.tags
+    assert result["nested"]["label"] == item.nested.label
+'''
+
+
+def render_hypothesis_test_file(
+    cases: list[ExecutableCase],
+    import_prefix: str = "",
+) -> str:
     return f'''"""
 Generated by tools/generate_pytest_from_properties.py.
 
@@ -1195,7 +1806,7 @@ pytest.importorskip("hypothesis")
 from hypothesis import given, settings, strategies as st
 
 
-CASES = {render_cases(cases)}
+CASES = {render_cases(cases, import_prefix)}
 
 
 def _load_class(module_name, class_name):
@@ -1320,6 +1931,10 @@ def write_report(
     path: Path,
     analysis_dir: Path,
     tests_path: Path,
+    import_prefix: str,
+    schema_cases: list[DataclassSchemaCase],
+    constructor_cases: list[DataclassConstructorCase],
+    conversion_cases: list[ConversionFunctionCase],
     cases: list[ExecutableCase],
     helper_cases: list[HelperBoundaryCase],
     common_ast_cases: list[CommonAstCase],
@@ -1339,19 +1954,28 @@ def write_report(
 
     tests_display = display(tests_path)
     hypothesis_path = tests_path.with_name("test_generated_dataclass_hypothesis.py")
+    schema_path = tests_path.with_name("test_generated_dataclass_schema.py")
+    conversion_path = tests_path.with_name("test_generated_dataclass_conversions.py")
     helper_boundary_path = tests_path.with_name("test_generated_helper_boundaries.py")
     common_ast_path = tests_path.with_name("test_generated_common_ast_properties.py")
     interprocedural_path = tests_path.with_name("test_generated_interprocedural_properties.py")
+    validation_venv = f"/tmp/sps-{tests_path.parent.name}-validation-venv"
     lines = [
         "# Generated Test Report",
         "",
         f"- Analysis directory: `{analysis_dir}`",
+        f"- Import prefix: `{import_prefix or '<none>'}`",
         f"- Test file: `{tests_display}`",
         f"- Hypothesis test file: `{display(hypothesis_path)}`",
+        f"- Dataclass schema test file: `{display(schema_path)}`",
+        f"- Dataclass conversion test file: `{display(conversion_path)}`",
         f"- Helper boundary test file: `{display(helper_boundary_path)}`",
         f"- Common-AST test file: `{display(common_ast_path)}`",
         f"- Interprocedural test file: `{display(interprocedural_path)}`",
-        f"- Executable cases emitted: {len(cases)}",
+        f"- Legacy transform/property cases emitted: {len(cases)}",
+        f"- Dataclass schema cases emitted: {len(schema_cases)}",
+        f"- Dataclass constructor cases emitted: {len(constructor_cases)}",
+        f"- Dataclass conversion cases emitted: {len(conversion_cases)}",
         f"- Helper boundary cases emitted: {len(helper_cases)}",
         f"- Common-AST cases emitted: {len(common_ast_cases)}",
         f"- Interprocedural cases emitted: {len(interprocedural_cases)}",
@@ -1362,31 +1986,37 @@ def write_report(
         "",
         "## Run",
         "",
-        "Set `PYTHONPATH` to the target project checkout and run pytest against this directory:",
+        "Use a disposable validation venv for target-project dependencies:",
+        "",
+        "```bash",
+        f"python3 -m venv {validation_venv}",
+        f"{validation_venv}/bin/python -m pip install pytest",
+        f"{validation_venv}/bin/python -m pip install -r /path/to/target-validation-requirements.txt",
+        f"{validation_venv}/bin/python tools/validate_generated_tests.py {display(tests_path.parent)} --target-project /path/to/target-project",
+        f"rm -rf {validation_venv}",
+        "```",
+        "",
+        "For dependency-light targets, the requirements install can be omitted. The validation venv should be removed after recording results and recreated when validation is needed again.",
+        "",
+        "If the target dependencies are already available in the current shell, the equivalent direct pytest command is:",
         "",
         "```bash",
         f"PYTHONPATH=/path/to/target-project pytest {display(tests_path.parent)}",
         "```",
         "",
-        "Or run through the SPS-VeriSpec validation wrapper to produce a Markdown summary:",
-        "",
-        "```bash",
-        f"python3 tools/validate_generated_tests.py {display(tests_path.parent)} --target-project /path/to/target-project",
-        "```",
-        "",
         "To produce relation-yield, common-AST/interprocedural yield, and coverage-delta evaluation stats:",
         "",
         "```bash",
-        f"python3 tools/evaluation_stats.py --analysis-dir {analysis_dir} --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests {display(tests_path.parent)} --report /tmp/sps-evaluation-stats.md",
+        f"{validation_venv}/bin/python tools/evaluation_stats.py --analysis-dir {analysis_dir} --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests {display(tests_path.parent)} --report /tmp/sps-evaluation-stats.md",
         "```",
         "",
         "To run relation-guided transform, collection-iteration, interprocedural-pipeline, and boundary mutation evaluation against handwritten, generated, and combined suites:",
         "",
         "```bash",
-        f"python3 tools/mutation_eval.py --analysis-dir {analysis_dir} --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests {display(tests_path.parent)} --max-mutants 12 --report /tmp/sps-mutation-eval.md",
+        f"{validation_venv}/bin/python tools/mutation_eval.py --analysis-dir {analysis_dir} --target-project /path/to/target-project --target-tests /path/to/target-project/tests --generated-tests {display(tests_path.parent)} --max-mutants 12 --report /tmp/sps-mutation-eval.md",
         "```",
         "",
-        "## Emitted Cases",
+        "## Legacy Transform/Property Cases",
         "",
     ]
     if cases:
@@ -1395,7 +2025,37 @@ def write_report(
                 f"- `{case.id}`: `{case.source_class}.{case.source_field}` -> `{case.target_arg}` via `{case.class_module}.{case.class_name}.{case.method_name}`"
             )
     else:
-        lines.append("- No executable cases were emitted by the conservative generator.")
+        lines.append(
+            "- No legacy transform/property cases were emitted by the conservative generator."
+        )
+
+    lines.extend(["", "## Dataclass Schema Cases", ""])
+    if schema_cases:
+        for case in schema_cases:
+            lines.append(
+                f"- `{case.id}`: runtime schema for `{prefixed_module_name(case.module_name, import_prefix)}.{case.class_name}`"
+            )
+    else:
+        lines.append("- No dataclass schema cases were emitted.")
+
+    lines.extend(["", "## Dataclass Constructor Cases", ""])
+    if constructor_cases:
+        for case in constructor_cases:
+            lines.append(
+                f"- `{case.id}`: constructor/default behavior for `{prefixed_module_name(case.module_name, import_prefix)}.{case.class_name}`"
+            )
+    else:
+        lines.append("- No dataclass constructor cases were emitted.")
+
+    lines.extend(["", "## Dataclass Conversion Cases", ""])
+    if conversion_cases:
+        for case in conversion_cases:
+            owner = f"{case.owner_class}." if case.owner_class else ""
+            lines.append(
+                f"- `{case.id}`: `{prefixed_module_name(case.module_name, import_prefix)}.{owner}{case.function_name}` as `{case.profile}`"
+            )
+    else:
+        lines.append("- No dataclass conversion cases were emitted.")
 
     lines.extend(["", "## Review Candidates", ""])
     if skipped:
@@ -1458,6 +2118,8 @@ def write_report(
             "## Notes",
             "",
             "The dataclass-transform generator only emits public `format*` method tests with string/list observations.",
+            "The dataclass schema generator emits runtime `dataclasses` reflection and constructor/default tests for every discovered dataclass up to `--max-cases`.",
+            "The dataclass conversion generator emits profile tests for public `from_dict`, `structure`, `to_dict`, `asdict`, and `unstructure` callables.",
             "The Hypothesis file is optional at runtime and is skipped by pytest when Hypothesis is not installed.",
             "Helper boundary tests are lower-confidence because they may call private helper methods directly.",
             "Common-AST tests are conservative and currently focus on observable collection iteration over dataclass fields.",
@@ -1481,11 +2143,26 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     fields = load_dataclass_fields(analysis_dir / "facts")
+    frozen_flags = load_dataclass_frozen_flags(analysis_dir / "facts")
+    dataclass_options = load_dataclass_options(analysis_dir / "facts")
     params = load_function_params(analysis_dir / "facts")
     owners = load_method_owners(analysis_dir / "facts")
+    function_names = load_function_names(analysis_dir / "facts")
     resolved_params = load_resolved_params(analysis_dir / "facts")
     modules = load_transform_modules(analysis_dir / "test_out")
     targets = load_targets(analysis_dir / "test_out")
+    schema_cases = build_schema_cases(
+        fields,
+        frozen_flags,
+        dataclass_options,
+        args.max_cases,
+    )
+    constructor_cases = build_constructor_cases(fields, args.max_cases)
+    conversion_cases = build_conversion_function_cases(
+        function_names,
+        owners,
+        args.max_cases,
+    )
     cases, skipped = build_cases(fields, modules, targets, args.max_cases)
     helper_cases, helper_skipped = load_helper_boundary_cases(
         analysis_dir / "semantic_out",
@@ -1510,28 +2187,52 @@ def main() -> None:
 
     tests_path = output_dir / "test_generated_dataclass_properties.py"
     hypothesis_path = output_dir / "test_generated_dataclass_hypothesis.py"
+    schema_path = output_dir / "test_generated_dataclass_schema.py"
+    conversion_path = output_dir / "test_generated_dataclass_conversions.py"
     helper_boundary_path = output_dir / "test_generated_helper_boundaries.py"
     common_ast_path = output_dir / "test_generated_common_ast_properties.py"
     interprocedural_path = output_dir / "test_generated_interprocedural_properties.py"
     report_path = output_dir / "README.md"
-    tests_path.write_text(render_test_file(cases), encoding="utf-8")
-    hypothesis_path.write_text(render_hypothesis_test_file(cases), encoding="utf-8")
+    tests_path.write_text(
+        render_test_file(cases, args.import_prefix),
+        encoding="utf-8",
+    )
+    hypothesis_path.write_text(
+        render_hypothesis_test_file(cases, args.import_prefix),
+        encoding="utf-8",
+    )
+    schema_path.write_text(
+        render_dataclass_schema_test_file(
+            schema_cases,
+            constructor_cases,
+            args.import_prefix,
+        ),
+        encoding="utf-8",
+    )
+    conversion_path.write_text(
+        render_conversion_test_file(conversion_cases, args.import_prefix),
+        encoding="utf-8",
+    )
     helper_boundary_path.write_text(
-        render_helper_boundary_test_file(helper_cases),
+        render_helper_boundary_test_file(helper_cases, args.import_prefix),
         encoding="utf-8",
     )
     common_ast_path.write_text(
-        render_common_ast_test_file(common_ast_cases),
+        render_common_ast_test_file(common_ast_cases, args.import_prefix),
         encoding="utf-8",
     )
     interprocedural_path.write_text(
-        render_interprocedural_test_file(interprocedural_cases),
+        render_interprocedural_test_file(interprocedural_cases, args.import_prefix),
         encoding="utf-8",
     )
     write_report(
         report_path,
         analysis_dir,
         tests_path,
+        args.import_prefix,
+        schema_cases,
+        constructor_cases,
+        conversion_cases,
         cases,
         helper_cases,
         common_ast_cases,
@@ -1544,6 +2245,8 @@ def main() -> None:
 
     print(tests_path)
     print(hypothesis_path)
+    print(schema_path)
+    print(conversion_path)
     print(helper_boundary_path)
     print(common_ast_path)
     print(interprocedural_path)

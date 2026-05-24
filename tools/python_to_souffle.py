@@ -1811,6 +1811,11 @@ def resolve_facts(facts: Iterable[Fact]) -> list[Fact]:
         for fact in resolved
         if fact.predicate == "module"
     }
+    module_suffix_index: dict[str, set[str]] = defaultdict(set)
+    for module_name in modules:
+        if "." not in module_name:
+            continue
+        module_suffix_index[module_name.rsplit(".", 1)[-1]].add(module_name)
     function_defs = {
         (str(module_name), str(qualified_name))
         for fact in resolved
@@ -1854,7 +1859,13 @@ def resolve_facts(facts: Iterable[Fact]) -> list[Fact]:
         module_name: str,
         type_ref: str,
     ) -> tuple[str, str] | None:
-        candidates = _resolution_candidates(module_name, type_ref, aliases, modules)
+        candidates = _resolution_candidates(
+            module_name,
+            type_ref,
+            aliases,
+            modules,
+            module_suffix_index,
+        )
         for candidate in candidates:
             matched = _split_known_class(candidate, class_defs, modules)
             if matched:
@@ -1999,6 +2010,7 @@ def resolve_facts(facts: Iterable[Fact]) -> list[Fact]:
             str(callee_name),
             aliases,
             modules,
+            module_suffix_index,
             function_defs,
             function_name_to_defs,
             split_resolved_name,
@@ -2109,6 +2121,7 @@ def _resolution_candidates(
     type_ref: str,
     aliases: dict[str, dict[str, str]],
     modules: set[str],
+    module_suffix_index: dict[str, set[str]] | None = None,
 ) -> list[str]:
     candidates: list[str] = []
     parts = type_ref.split(".")
@@ -2121,9 +2134,16 @@ def _resolution_candidates(
     candidates.append(type_ref)
     candidates.append(f"{module_name}.{type_ref}")
 
-    for module_candidate in modules:
-        if module_candidate.endswith(f".{local_name}"):
-            candidates.append(".".join([module_candidate, *parts[1:]]))
+    if module_suffix_index is None:
+        module_matches = [
+            module_candidate
+            for module_candidate in modules
+            if module_candidate.endswith(f".{local_name}")
+        ]
+    else:
+        module_matches = sorted(module_suffix_index.get(local_name, set()))
+    for module_candidate in module_matches:
+        candidates.append(".".join([module_candidate, *parts[1:]]))
 
     return candidates
 
@@ -2152,6 +2172,7 @@ def _resolve_call_target(
     callee_name: str,
     aliases: dict[str, dict[str, str]],
     modules: set[str],
+    module_suffix_index: dict[str, set[str]],
     function_defs: set[tuple[str, str]],
     function_name_to_defs: dict[str, set[tuple[str, str]]],
     split_resolved_name: Callable[[str, str], tuple[str, str] | None],
@@ -2196,6 +2217,7 @@ def _resolve_call_target(
             callee_name,
             aliases,
             modules,
+            module_suffix_index,
         ):
             target = _split_known_function(candidate, function_defs, modules)
             if target is not None:
@@ -2213,7 +2235,13 @@ def _resolve_call_target(
         target_module, target_qualified_name = next(iter(same_module_defs))
         return target_module, target_qualified_name, "function"
 
-    for candidate in _resolution_candidates(module_name, callee_name, aliases, modules):
+    for candidate in _resolution_candidates(
+        module_name,
+        callee_name,
+        aliases,
+        modules,
+        module_suffix_index,
+    ):
         target = _split_known_function(candidate, function_defs, modules)
         if target is not None:
             return target[0], target[1], "function"

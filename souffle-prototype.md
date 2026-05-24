@@ -63,6 +63,17 @@ focused on application code.
 7. Validate generated tests, then measure relation-to-test yield, coverage
    deltas, and mutation score against the target checkout.
 
+Current lesson from the dacite and Transformers experiments: relation discovery
+and executable oracle generation should be evaluated separately. The Datalog
+layer can find useful dataclass facts even when the old CutePetsBoston-style
+transform generator emits no tests. Generic runtime dataclass schema,
+constructor/default, and conversion-profile oracles are the portable layer. A
+large target such as Transformers also requires dependency-aware validation:
+missing packages such as `torch` can turn otherwise valid generated tests into
+import skips. Keep those target dependencies in a disposable validation venv and
+delete it after validation/evaluation so the main development environment stays
+small and reproducible.
+
 The dataclass inventory is still the right first step. The current workflow no
 longer stops there: later layers deliberately add lightweight semantic and
 static-analysis facts without attempting a full Souffle translation of an entire

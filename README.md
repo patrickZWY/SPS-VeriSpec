@@ -5,10 +5,12 @@ for Python projects. It extracts Python AST facts, runs Souffle Datalog rules
 over those facts, and surfaces relationships that can become executable tests
 or design-review candidates.
 
-The current experiment uses `CutePetsBoston` as the target project. Because
-that sample app may not be checked into every clone of this repository, clone or
-copy a local version of CutePetsBoston into this repo as `CutePetsBoston/`, or
-pass the path to any Python project you want to analyze.
+The original experiment used `CutePetsBoston` as the target project. The current
+dataclass-generalization experiments also use `dacite` as a small
+dataclass-centered target and a bounded `transformers` slice as a large-library
+stress target. Because these target checkouts may not be present in every clone
+of this repository, clone or copy the target project locally, or pass the path
+to any Python project you want to analyze.
 
 ## High-level workflow
 
@@ -29,6 +31,31 @@ to prove whole-program correctness. It derives reviewable relations such as
 field influence, observable output slices, boundary behavior, nullness/emptiness
 states, and protocol-order candidates, then the generator turns only the
 high-confidence subset into executable tests.
+
+## Current conclusion
+
+The Python-to-Datalog analysis pipeline is useful, but executable oracle
+generation must be treated as a separate layer. The first generator was
+overfit to CutePetsBoston-shaped transforms: public `format*` methods, simple
+string/list observations, and dataclass-to-dataclass field flow. That pattern
+does not cover many dataclass-heavy libraries.
+
+The portable oracle families are now:
+
+- runtime dataclass schema checks through `dataclasses.fields` and
+  `__dataclass_params__`
+- constructor/default/default-factory behavior checks
+- generic conversion-profile checks for APIs such as `from_dict`, `structure`,
+  `to_dict`, `asdict`, and `unstructure`
+- conservative project-specific transform tests only when there is a strong
+  executable oracle
+
+`dacite` is the better near-term generalization benchmark because the full
+package is small, dependency-light, and centered on dataclass conversion.
+`transformers` remains useful, but mainly as a scale and dependency stress
+target: full-tree extraction still needs streaming/progress-aware work, and
+many modules require the target runtime dependency chain before generated tests
+can be judged executable.
 
 ## Agent analysis protocol
 
@@ -72,28 +99,60 @@ Use this protocol for each target project:
      --project-name <project-name>
    ```
 
-   If the target project does not expose the dataclass transformation patterns
-   currently supported by the generator, report that clearly instead of treating
-   it as a tool failure.
-6. Validate generated tests when any executable tests are emitted:
+   If analysis was intentionally run on an inner package directory, pass
+   `--import-prefix <top_level_package>` so generated imports match the target
+   project root used during validation.
+6. Prepare a disposable validation environment for target dependencies.
+
+   The main `.venv` is for SPS-VeriSpec development dependencies only. Do not
+   leave large target/runtime dependencies such as PyTorch installed there after
+   an experiment. Create a temporary validation venv, install only the
+   dependencies needed to import the target project and run pytest, then remove
+   that venv after validation/evaluation.
 
    ```bash
-   .venv/bin/python tools/validate_generated_tests.py \
+   python3 -m venv /tmp/sps-<project-name>-validation-venv
+   /tmp/sps-<project-name>-validation-venv/bin/python -m pip install pytest
+   /tmp/sps-<project-name>-validation-venv/bin/python -m pip install \
+     -r <target-validation-requirements.txt>
+   ```
+
+   For the bounded Transformers experiment, use:
+
+   ```bash
+   /tmp/sps-transformers-validation-venv/bin/python -m pip install \
+     -r validation_requirements/transformers.txt
+   ```
+
+   If a target is dependency-light, this step can be just `pytest` or the
+   target's own requirements file. Missing dependencies are not equivalent to
+   bad generated tests; they should be reported as dependency/import skips.
+
+7. Validate generated tests when any executable tests are emitted:
+
+   ```bash
+   /tmp/sps-<project-name>-validation-venv/bin/python \
+     tools/validate_generated_tests.py \
      generated_tests/<project-name> \
      --target-project <target-project>
    ```
 
-7. Run coverage and visualization evaluation when the target has a test suite
+   For example, installing Transformers runtime dependencies changed the bounded
+   Transformers generated suite from mostly skipped to `99 passed, 7 skipped`.
+
+8. Run coverage and visualization evaluation when the target has a test suite
    and generated tests are importable:
 
    ```bash
-   .venv/bin/python tools/coverage_stats.py \
+   /tmp/sps-<project-name>-validation-venv/bin/python \
+     tools/coverage_stats.py \
      --target-project <target-project> \
      --target-tests <target-project>/tests \
      --generated-tests generated_tests/<project-name> \
      --report /tmp/sps-<project-name>-coverage.md
 
-   .venv/bin/python tools/evaluation_stats.py \
+   /tmp/sps-<project-name>-validation-venv/bin/python \
+     tools/evaluation_stats.py \
      --analysis-dir /tmp/sps-<project-name>-souffle \
      --target-project <target-project> \
      --target-tests <target-project>/tests \
@@ -101,10 +160,11 @@ Use this protocol for each target project:
      --report /tmp/sps-<project-name>-evaluation.md
    ```
 
-8. Run mutation evaluation when generated tests and target tests both run:
+9. Run mutation evaluation when generated tests and target tests both run:
 
    ```bash
-   .venv/bin/python tools/mutation_eval.py \
+   /tmp/sps-<project-name>-validation-venv/bin/python \
+     tools/mutation_eval.py \
      --analysis-dir /tmp/sps-<project-name>-souffle \
      --target-project <target-project> \
      --target-tests <target-project>/tests \
@@ -113,7 +173,18 @@ Use this protocol for each target project:
      --report /tmp/sps-<project-name>-mutation.md
    ```
 
-9. Final user report must include:
+10. Clean the disposable validation environment after validation/evaluation is
+    complete:
+
+   ```bash
+   rm -rf /tmp/sps-<project-name>-validation-venv
+   ```
+
+   Recreate it from the same requirements file the next time validation is
+   needed. This keeps heavyweight target dependencies out of the main project
+   environment and prevents stale dependency state from affecting future runs.
+
+11. Final user report must include:
    - Commands that passed or failed.
    - Paths to Markdown reports and generated test files.
    - Generated-test pass/fail/skip counts.
@@ -219,37 +290,54 @@ This writes:
 
 - `generated_tests/cutepetsboston/test_generated_dataclass_properties.py`
 - `generated_tests/cutepetsboston/test_generated_dataclass_hypothesis.py`
+- `generated_tests/cutepetsboston/test_generated_dataclass_schema.py`
+- `generated_tests/cutepetsboston/test_generated_dataclass_conversions.py`
 - `generated_tests/cutepetsboston/test_generated_helper_boundaries.py`
 - `generated_tests/cutepetsboston/test_generated_common_ast_properties.py`
 - `generated_tests/cutepetsboston/test_generated_interprocedural_properties.py`
 - `generated_tests/cutepetsboston/README.md`
 
 The generated tests are intentionally not written into `CutePetsBoston/`.
-Users can clone or copy their own target checkout, install its dependencies,
-and run the generated tests with the target project on `PYTHONPATH`:
+Users can clone or copy their own target checkout and run the generated tests
+from a disposable validation venv. Prefer installing target dependencies into
+that temporary venv instead of the main `.venv`:
 
 ```bash
-PYTHONPATH=/path/to/CutePetsBoston pytest generated_tests/cutepetsboston
+python3 -m venv /tmp/sps-cutepetsboston-validation-venv
+/tmp/sps-cutepetsboston-validation-venv/bin/python -m pip install pytest
+/tmp/sps-cutepetsboston-validation-venv/bin/python tools/validate_generated_tests.py \
+  generated_tests/cutepetsboston \
+  --target-project /path/to/CutePetsBoston
+rm -rf /tmp/sps-cutepetsboston-validation-venv
 ```
 
-The current generator emits public `format*` dataclass-transformation tests
-where the derived relation has a simple string/list oracle. It also emits an
-optional Hypothesis-backed property test file for the same conservative
-relations, lower-confidence helper-boundary tests when a private helper
-boundary can be driven by a simple string input, common-AST collection tests,
-and interprocedural observable-slice tests when a public method path can drive
-the source dataclass to the output dataclass. It keeps publishing paths,
-branch-only facts, lossy-flow candidates, interprocedural slices without strong
-executable oracles, and other lower-confidence relations in the generated
-report until stronger oracles are available.
+The current generator always emits runtime dataclass schema and
+constructor/default tests for discovered dataclasses. It also emits public
+`format*` dataclass-transformation tests where the derived relation has a simple
+string/list oracle, an optional Hypothesis-backed property test file for those
+same conservative transform relations, conversion-profile tests for
+`from_dict`/`structure` and `to_dict`/`asdict`/`unstructure` APIs,
+lower-confidence helper-boundary tests when a private helper boundary can be
+driven by a simple string input, common-AST collection tests, and
+interprocedural observable-slice tests when a public method path can drive the
+source dataclass to the output dataclass. It keeps publishing paths, branch-only
+facts, lossy-flow candidates, interprocedural slices without strong executable
+oracles, and other lower-confidence relations in the generated report until
+stronger oracles are available.
 
 For the current CutePetsBoston snapshot, the generated suite contains 73 tests
-and validates cleanly against the local target checkout.
+and validates cleanly against the local target checkout. The dacite
+generalization experiment also produces executable non-formatter tests: runtime
+schema/default checks plus a `from_dict` conversion-profile oracle. A bounded
+Transformers dataclass-heavy slice validates with `99 passed, 7 skipped` after
+installing runtime dependencies; the remaining skips are empty non-applicable
+generated files and the expected `AddedToken` optional-dependency runtime case.
 
 To run generated tests and write a validation summary:
 
 ```bash
-python3 tools/validate_generated_tests.py \
+/tmp/sps-<project-name>-validation-venv/bin/python \
+  tools/validate_generated_tests.py \
   generated_tests/cutepetsboston \
   --target-project /path/to/CutePetsBoston
 ```
@@ -321,6 +409,12 @@ Include the before/after result or a short note explaining why a command was not
 applicable. This keeps new features tied to measurable analysis and testing
 effects instead of only implementation changes.
 
+When a validation pass needs target-specific dependencies, install them in a
+disposable `/tmp/sps-<project-name>-validation-venv` and delete that venv after
+recording the result. Do not keep large target dependencies in the main
+SPS-VeriSpec `.venv`; recreate the disposable environment when validation is
+needed again.
+
 ## What this project is trying to achieve
 
 The goal is to make testing more automated and iterative. Instead of relying
@@ -367,15 +461,24 @@ facts into higher-level test obligations with clear oracles.
 - Python: `3.12.0`.
 - Souffle: `2.5`.
 - pytest: `9.0.3` inside the local `.venv`.
-- Main case study: `CutePetsBoston`.
+- Main case studies: `CutePetsBoston` for the original end-to-end transform
+  workflow, `dacite` for dataclass-generalization, and a bounded `transformers`
+  slice for scale/dependency stress.
 - Portability status: not systematically tested across Linux, Windows, multiple
   Python versions, or multiple Souffle versions.
 
 ## Repository map
 
-- `CutePetsBoston/`: optional local checkout of the sample Python application used as the current analysis target.
+- `CutePetsBoston/`: optional local checkout of the sample Python application
+  used as the original analysis target.
+- `dacite/`: optional local checkout used for the smaller dataclass conversion
+  generalization experiment.
+- `transformers/`: optional local checkout used for the large-library
+  dataclass/dependency stress experiment.
 - `tools/`: Python tooling for AST fact extraction, backend orchestration,
   generated tests, validation, coverage/evaluation, and mutation evaluation.
+- `validation_requirements/`: target-specific dependency files for disposable
+  validation venvs. These are not installed into the main `.venv`.
 - `souffle_static_analysis/`: runnable Souffle/Datalog static-analysis backend.
   It includes schema, effect, deduction, test-target, semantic,
   interprocedural, slicing, abstract-state, typestate, and boundary rules.
@@ -421,6 +524,14 @@ Implemented:
   fact extraction used by the semantic layer.
 - Portable pytest generation from the conservative executable subset of
   dataclass transformation and optional-field properties.
+- Portable runtime dataclass schema and constructor/default pytest generation
+  for discovered dataclasses.
+- Generic dataclass conversion-profile pytest generation for public
+  `from_dict`, `structure`, `to_dict`, `asdict`, and `unstructure` APIs.
+- Import-prefix aware generated tests for analyses run on an inner package
+  directory but validated from the real project root.
+- Runtime skips for static dataclass facts that resolve to non-dataclass
+  optional dependency implementations in the installed target environment.
 - Optional Hypothesis property-test generation for supported transformation
   properties.
 - Generated-test validation runner with pass/fail/skip Markdown reports.
@@ -461,12 +572,13 @@ Implemented:
 
 Still future work:
 
-- Validate generality on a second project. Every claim of generality currently
-  rests on `CutePetsBoston`. Run the full pipeline against at least one other
-  Python project (a Flask service, a CLI tool, or any non-trivial codebase),
-  record which rules fire, which generated tests survive, and publish the
-  delta. This single experiment tells us more about the rule layer than more
-  relations on the existing case study.
+- Broaden the benchmark set beyond CutePetsBoston, dacite, and the bounded
+  Transformers slice. The next targets should be small-to-medium
+  dataclass-heavy projects with low dependency friction, so regressions in
+  generic schema/default/conversion oracles are easy to diagnose.
+- Make full-tree extraction and fact resolution streaming or progress-aware so
+  very large libraries such as Transformers can be analyzed without ad hoc
+  slices.
 - Tighten or measure oracle strength in generated tests. The current
   `_assert_observed` helper in
   `generated_tests/cutepetsboston/test_generated_dataclass_properties.py`
@@ -493,14 +605,17 @@ Still future work:
 - Expand executable property/fuzz tests from more derived CSV relations,
   especially public boundary, branch-condition, and combination-heavy
   properties.
-- Turn dataclass options beyond `frozen` into executable obligations: constructor
-  shape for `init`/`kw_only`, comparison and ordering behavior for `eq`/`order`,
-  hashing risks for `unsafe_hash`, pattern-matching API shape for `match_args`,
-  and attribute-layout behavior for `slots`/`weakref_slot`.
+- Extend dataclass option obligations beyond the current runtime schema checks:
+  constructor shape for `init`/`kw_only`, comparison and ordering behavior for
+  `eq`/`order`, hashing risks for `unsafe_hash`, pattern-matching API shape for
+  `match_args`, and attribute-layout behavior for `slots`/`weakref_slot`.
 - Feed generated-test pass/fail/skip results back into the analysis loop.
 - Improve generated reports so dependency-bound skips, assertion failures,
   human-review properties, and evaluation deltas are easier to compare across
   runs.
+- Add a target-environment setup report that records installed dependencies and
+  classifies validation skips as empty-case, missing-dependency, runtime-shape,
+  or fixture-construction skips.
 - Resolve imports and type identities more precisely.
 - Add higher-precision call-boundary summaries for callbacks, generic
   containers, and dynamically selected functions.
@@ -554,3 +669,12 @@ Potential static-analysis directions:
   never-constructed dataclasses, impossible branches, and unobserved result
   fields. Unread required-field candidates are implemented; broader dead-data
   and unreachable-branch analysis remains future work.
+
+## Important Limitation:
+
+- Our analysis heavily relies on dataclasses so projects without dataclasses
+  will not produce meaningful tests. In the future, our analysis will be
+  extended to more common Python structures.
+
+- This project is Python only so project with interoperation with other
+  PLs will be impacted.

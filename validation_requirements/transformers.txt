@@ -1,0 +1,20 @@
+# Disposable validation environment requirements for the bounded Transformers
+# dataclass-heavy generated-test experiment.
+#
+# This file is intentionally separate from the SPS-VeriSpec development venv.
+# Install it into a temporary validation venv, run validation, then delete that
+# venv so target dependencies do not remain in the repo's main environment.
+
+pytest
+numpy<2
+filelock
+huggingface-hub>=1.5.0,<2.0
+safetensors>=0.4.3
+tokenizers>=0.22.0,<=0.23.0
+tqdm>=4.27
+
+# The checked-out Transformers dependency table asks for torch>=2.4, but the
+# package index available during the May 2026 local validation exposed only
+# torch 2.2.0 through 2.2.2 for this platform. Keep this pinned so the recorded
+# validation result is reproducible in the same environment.
+torch==2.2.2

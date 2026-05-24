@@ -36,6 +36,28 @@ extractor work should keep prioritizing AST nodes that unlock semantic
 obligations or better oracles, rather than adding every syntax node as an
 isolated structural fact.
 
+## Current conclusion
+
+The Datalog analysis layer is not the main blocker. It already derives useful
+dataclass schema, field, role, call, and semantic relations. The failure in the
+second experiment was that the first executable generator was too narrow: it
+mostly emitted CutePetsBoston-shaped formatter tests for public `format*`
+methods with simple string/list observations.
+
+The generator now needs two tiers:
+
+- generic dataclass oracles that should work for most dataclass-heavy Python
+  projects
+- project-pattern oracles that are emitted only when the static relation has a
+  strong runtime fixture and assertion template
+
+The generic tier currently includes runtime schema checks, constructor/default
+checks, default-factory checks, and conversion-profile checks for common
+dataclass loader/converter APIs. This tier is what made the dacite experiment
+produce executable non-CutePetsBoston tests and what made a bounded
+Transformers dataclass slice executable once runtime dependencies were
+installed.
+
 ## Goal
 
 Produce derived facts that can become test targets.
@@ -149,6 +171,12 @@ generated output belongs under a repo-owned directory:
 
 ```text
 generated_tests/<project-name>/test_generated_dataclass_properties.py
+generated_tests/<project-name>/test_generated_dataclass_hypothesis.py
+generated_tests/<project-name>/test_generated_dataclass_schema.py
+generated_tests/<project-name>/test_generated_dataclass_conversions.py
+generated_tests/<project-name>/test_generated_helper_boundaries.py
+generated_tests/<project-name>/test_generated_common_ast_properties.py
+generated_tests/<project-name>/test_generated_interprocedural_properties.py
 generated_tests/<project-name>/README.md
 ```
 
@@ -167,10 +195,20 @@ python3 tools/generate_pytest_from_properties.py \
   --project-name cutepetsboston
 ```
 
-It reads the `facts/` and `test_out/` directories produced by
+If analysis is run on an inner package directory but validation uses the parent
+source root on `PYTHONPATH`, pass `--import-prefix <top_level_package>` so the
+generated imports remain executable.
+
+It reads the `facts/`, `test_out/`, and `semantic_out/` directories produced by
 `tools/run_static_analysis.py --engine souffle`. It currently emits a
 conservative executable subset:
 
+- runtime dataclass schema and constructor/default behavior tests for
+  discovered dataclasses
+- runtime skips for static dataclass facts that resolve to a non-dataclass
+  implementation under the installed optional dependency set
+- conversion-profile tests for dataclass loader/converter APIs named
+  `from_dict`, `structure`, `to_dict`, `asdict`, or `unstructure`
 - public `format*` methods that transform one dataclass into another
 - required field mappings with string/list observability assertions
 - optional field passthrough mappings with exact `None`, empty-string, and
@@ -194,6 +232,14 @@ It deliberately reports lower-confidence candidates instead of executing them:
 This split is important: the generated test file should be useful immediately,
 while the generated README keeps the rest of the property inventory visible for
 review and future oracle work.
+
+Validation must run in a target environment with dependencies installed. Missing
+dependencies can make good generated tests appear non-executable. For example,
+the bounded Transformers dataclass slice skipped most model-output tests until
+`torch` was installed; after dependency installation it validated with
+`99 passed, 7 skipped`. Install those target dependencies in a disposable
+validation venv, not in the main SPS-VeriSpec `.venv`, and delete the disposable
+venv after validation/evaluation is recorded.
 
 ## Class/dataclass role facts
 
@@ -463,6 +509,26 @@ The current project would get test targets such as:
 - Assert result/status literals such as successful and failed `PostResult.success` paths.
 - Review lossy required-field candidates where a required input field does not reach the returned dataclass.
 
+## What this enables beyond CutePetsBoston
+
+The generic tier is meant to prevent the generator from depending on
+CutePetsBoston naming conventions:
+
+- For `dacite`, the generator emits runtime schema/default tests for
+  `dacite.config.Config` and a conversion-profile oracle for `dacite.core.from_dict`.
+- For the bounded Transformers slice, the generator emits dataclass
+  schema/default tests for model-output, callback, configuration, loading-report,
+  tokenizer, and attention-mask dataclasses.
+- For optional dependency cases, the generated tests skip runtime shapes that no
+  longer match the static fallback. `AddedToken` is the motivating example:
+  Transformers defines a fallback dataclass when `tokenizers` is absent, but
+  resolves to `tokenizers.AddedToken` when `tokenizers` is installed.
+
+This means Transformers should be treated as a scale/dependency stress target,
+not the primary proof target. Small libraries like dacite are better for
+regression testing generic dataclass oracle generation because their full
+analysis completes quickly and dependency failures are easier to interpret.
+
 ## Validation and presentation
 
 After generating tests, the framework can validate them by running pytest
@@ -499,9 +565,10 @@ too strong. The report should preserve that distinction.
 
 ## Bottom line
 
-The next step should not be more undifferentiated dataflow. It should be
-turning the new semantic candidates into stronger oracles and reports while
-preserving enough structure to generate tests:
+The next step should not be more undifferentiated dataflow, and it should not be
+more project-shaped formatter tests. It should be turning the new semantic
+candidates into stronger generic oracles and reports while preserving enough
+structure to generate tests:
 
 ```text
 class role

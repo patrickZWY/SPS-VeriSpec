@@ -29,13 +29,44 @@ class GeneratePytestFromPropertiesTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            (facts_dir / "dataclass.facts").write_text(
+                "sample\tPet\t0\t4\nsample\tPost\t0\t8\n",
+                encoding="utf-8",
+            )
+            (facts_dir / "dataclass_option.facts").write_text(
+                "\n".join(
+                    [
+                        "sample\tPet\tinit\ttrue\t0",
+                        "sample\tPet\trepr\ttrue\t0",
+                        "sample\tPet\teq\ttrue\t0",
+                        "sample\tPet\torder\tfalse\t0",
+                        "sample\tPost\tinit\ttrue\t0",
+                        "sample\tPost\trepr\ttrue\t0",
+                        "sample\tPost\teq\ttrue\t0",
+                        "sample\tPost\torder\tfalse\t0",
+                    ]
+                ),
+                encoding="utf-8",
+            )
             (facts_dir / "function_param.facts").write_text(
                 "\n".join(
                     [
+                        "sample\tfrom_dict\tdata_class\ttype\t1\t12",
+                        "sample\tfrom_dict\tdata\tdict\t2\t12",
                         "sample\tPoster._clean_text\tself\t\t1\t20",
                         "sample\tPoster._clean_text\ttext\tstr\t2\t20",
                         "sample\tPoster.format_post\tself\t\t1\t30",
                         "sample\tPoster.format_post\tpet\tPet\t2\t30",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (facts_dir / "function_name.facts").write_text(
+                "\n".join(
+                    [
+                        "sample\tfrom_dict\tfrom_dict",
+                        "sample\tPoster._clean_text\t_clean_text",
+                        "sample\tPoster.format_post\tformat_post",
                     ]
                 ),
                 encoding="utf-8",
@@ -93,6 +124,8 @@ class GeneratePytestFromPropertiesTests(unittest.TestCase):
                 str(output_dir),
                 "--project-name",
                 "sample_project",
+                "--import-prefix",
+                "pkg",
             ]
             try:
                 generate_main()
@@ -102,6 +135,8 @@ class GeneratePytestFromPropertiesTests(unittest.TestCase):
             project_dir = output_dir / "sample_project"
             example_test = project_dir / "test_generated_dataclass_properties.py"
             hypothesis_test = project_dir / "test_generated_dataclass_hypothesis.py"
+            schema_test = project_dir / "test_generated_dataclass_schema.py"
+            conversion_test = project_dir / "test_generated_dataclass_conversions.py"
             helper_boundary_test = project_dir / "test_generated_helper_boundaries.py"
             common_ast_test = project_dir / "test_generated_common_ast_properties.py"
             interprocedural_test = project_dir / "test_generated_interprocedural_properties.py"
@@ -109,16 +144,25 @@ class GeneratePytestFromPropertiesTests(unittest.TestCase):
 
             self.assertTrue(example_test.exists())
             self.assertTrue(hypothesis_test.exists())
+            self.assertTrue(schema_test.exists())
+            self.assertTrue(conversion_test.exists())
             self.assertTrue(helper_boundary_test.exists())
             self.assertTrue(common_ast_test.exists())
             self.assertTrue(interprocedural_test.exists())
             self.assertTrue(report.exists())
             self.assertIn("'source_type': 'str'", example_test.read_text(encoding="utf-8"))
+            self.assertIn("'source_module': 'pkg.sample'", example_test.read_text(encoding="utf-8"))
             self.assertIn("from hypothesis import", hypothesis_test.read_text(encoding="utf-8"))
+            self.assertIn("SCHEMA_CASES", schema_test.read_text(encoding="utf-8"))
+            self.assertIn("'module_name': 'pkg.sample'", schema_test.read_text(encoding="utf-8"))
+            self.assertIn("CONVERSION_CASES", conversion_test.read_text(encoding="utf-8"))
+            self.assertIn("'profile': 'dict_to_dataclass'", conversion_test.read_text(encoding="utf-8"))
             self.assertIn("HELPER_BOUNDARY_CASES", helper_boundary_test.read_text(encoding="utf-8"))
             self.assertIn("COMMON_AST_CASES", common_ast_test.read_text(encoding="utf-8"))
             self.assertIn("INTERPROCEDURAL_CASES", interprocedural_test.read_text(encoding="utf-8"))
             self.assertIn("Hypothesis test file", report.read_text(encoding="utf-8"))
+            self.assertIn("Dataclass schema test file", report.read_text(encoding="utf-8"))
+            self.assertIn("Dataclass conversion test file", report.read_text(encoding="utf-8"))
             self.assertIn("Helper boundary test file", report.read_text(encoding="utf-8"))
             self.assertIn("Common-AST test file", report.read_text(encoding="utf-8"))
             self.assertIn("Interprocedural test file", report.read_text(encoding="utf-8"))
