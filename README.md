@@ -572,6 +572,8 @@ Implemented:
 
 Still future work:
 
+- Turn conservative/risky properties into executable oracles.
+
 - Broaden the benchmark set beyond CutePetsBoston, dacite, and the bounded
   Transformers slice. The next targets should be small-to-medium
   dataclass-heavy projects with low dependency friction, so regressions in
