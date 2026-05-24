@@ -14,13 +14,20 @@ to any Python project you want to analyze.
 
 ## High-level workflow
 
+The active pipeline today is purely static. It runs the Python extractor and
+the Souffle rules under `souffle_static_analysis/`, then turns the derived CSV
+relations into pytest files. `rule_layer/` is a legacy snapshot of the
+project-specific findings notes that the current `tools/` orchestration does
+not invoke; re-incorporating it (and the planned LLM-assisted semantic layer)
+is tracked under future work.
+
 ```text
 Python source
--> AST fact extraction
--> dataclass schema/effect/deduction rules
--> test-target and semantic analysis rules
--> static-analysis candidates such as interprocedural dataflow, slicing,
-   abstract states, typestate/protocol obligations, and common-AST relations
+-> AST fact extraction (tools/python_to_souffle.py)
+-> Souffle rules under souffle_static_analysis/
+   (dataclass schema/effect/deduction, test-target, semantic,
+    interprocedural dataflow, slicing, abstract states,
+    typestate/protocol, common-AST relations)
 -> derived CSV relations and Markdown summaries
 -> conservative generated pytest tests plus review candidates
 -> validation, coverage/evaluation reports, and mutation evaluation
