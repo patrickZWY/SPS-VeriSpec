@@ -140,6 +140,9 @@ class GeneratePytestFromPropertiesTests(unittest.TestCase):
             helper_boundary_test = project_dir / "test_generated_helper_boundaries.py"
             common_ast_test = project_dir / "test_generated_common_ast_properties.py"
             interprocedural_test = project_dir / "test_generated_interprocedural_properties.py"
+            llm_oracle_input = project_dir / "llm_oracle_input.json"
+            llm_oracle_test = project_dir / "test_generated_llm_oracle_candidates.py"
+            llm_oracle_manifest = project_dir / "oracle_candidates.json"
             report = project_dir / "README.md"
 
             self.assertTrue(example_test.exists())
@@ -149,6 +152,9 @@ class GeneratePytestFromPropertiesTests(unittest.TestCase):
             self.assertTrue(helper_boundary_test.exists())
             self.assertTrue(common_ast_test.exists())
             self.assertTrue(interprocedural_test.exists())
+            self.assertTrue(llm_oracle_input.exists())
+            self.assertTrue(llm_oracle_test.exists())
+            self.assertTrue(llm_oracle_manifest.exists())
             self.assertTrue(report.exists())
             self.assertIn("'source_type': 'str'", example_test.read_text(encoding="utf-8"))
             self.assertIn("'source_module': 'pkg.sample'", example_test.read_text(encoding="utf-8"))
@@ -160,12 +166,15 @@ class GeneratePytestFromPropertiesTests(unittest.TestCase):
             self.assertIn("HELPER_BOUNDARY_CASES", helper_boundary_test.read_text(encoding="utf-8"))
             self.assertIn("COMMON_AST_CASES", common_ast_test.read_text(encoding="utf-8"))
             self.assertIn("INTERPROCEDURAL_CASES", interprocedural_test.read_text(encoding="utf-8"))
+            self.assertIn("llm_oracle_candidate", llm_oracle_test.read_text(encoding="utf-8"))
+            self.assertNotIn("llm_oracle_candidate", example_test.read_text(encoding="utf-8"))
             self.assertIn("Hypothesis test file", report.read_text(encoding="utf-8"))
             self.assertIn("Dataclass schema test file", report.read_text(encoding="utf-8"))
             self.assertIn("Dataclass conversion test file", report.read_text(encoding="utf-8"))
             self.assertIn("Helper boundary test file", report.read_text(encoding="utf-8"))
             self.assertIn("Common-AST test file", report.read_text(encoding="utf-8"))
             self.assertIn("Interprocedural test file", report.read_text(encoding="utf-8"))
+            self.assertIn("LLM oracle input contract", report.read_text(encoding="utf-8"))
 
     def test_parse_pytest_counts_handles_common_summary(self) -> None:
         counts = parse_pytest_counts("12 passed, 3 skipped, 1 failed, 2 errors in 0.42s")

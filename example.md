@@ -50,6 +50,14 @@ derivations:
 python3 tools/run_static_analysis.py CutePetsBoston --engine python --work-dir /tmp/sps-python-run
 ```
 
+Optional LLM-assisted rule-generation modes should be evaluated by comparing
+their `semantic_out/` and `test_out/` rows against the static run. In the
+2026-05-24 CutePetsBoston plus bounded Transformers evaluation, this comparison
+gave no evidence that LLM-assisted rules helped: CutePetsBoston stayed at `62`
+semantic/test relations and `1477` rows in static, LLM-only, and combined modes,
+while the bounded Transformers slice stayed at `62` relations and `2326` rows.
+The only difference was provenance taint in the combined reports.
+
 4. Review derived relationships.
 
 The analyzer now derives:
@@ -137,6 +145,14 @@ value. It reports the rest as review candidates, including publish methods,
 helper boundaries that need custom input construction, branch-only facts, lossy
 required-field candidates, common-AST relations without a strong oracle, and
 relations whose assertion oracle is not yet strong enough.
+
+The LLM oracle-synthesis lane is separate from the trusted generator. It may
+write quarantined tests to `test_generated_llm_oracle_candidates.py` plus
+`oracle_candidates.json`, but those tests are review artifacts. In the
+2026-05-24 run, this lane produced two CutePetsBoston promotion candidates
+(`2 passed` when run oracle-only) and one bounded Transformers promotion
+candidate (`1 passed` when run oracle-only). It did not improve trusted rule
+generation or conservative relation yield.
 
 Concrete current output examples:
 
@@ -261,6 +277,16 @@ python3 tools/validate_generated_tests.py \
 The generated README records the direct pytest command and separates emitted
 executable cases from candidate relations left for review.
 
+Current evidence from the 2026-05-24 comparison:
+
+- CutePetsBoston static generated validation: `89 passed, 2 skipped`.
+- CutePetsBoston combined LLM-oracle validation: `89 passed, 1 skipped,
+  2 xpassed`; oracle-only validation: `2 passed`.
+- Bounded Transformers static generated validation after installing target
+  dependencies: `99 passed, 8 skipped`.
+- Bounded Transformers combined LLM-oracle validation: `99 passed, 7 skipped,
+  1 xpassed`; oracle-only validation: `1 passed`.
+
 7. Measure combined source coverage.
 
 The coverage-statistics runner uses the Python standard-library `trace` module,
@@ -276,8 +302,11 @@ python3 tools/coverage_stats.py \
   --report /tmp/sps-coverage-stats.md
 ```
 
-For the local CutePetsBoston checkout used during development, the combined run
-covered `461/911` target source lines (`50.6%`) with `137` pytest cases passing.
+For the local CutePetsBoston checkout used during the 2026-05-24 LLM comparison,
+both static and combined runs covered `507/911` target source lines (`55.7%`).
+The combined run still exited nonzero because of one pre-existing handwritten
+Hypothesis failure in `CutePetsBoston/tests/test_mastodon.py`, not because of
+generated tests.
 
 8. Measure evaluation yield and coverage deltas.
 
@@ -298,10 +327,22 @@ For the local CutePetsBoston checkout used during development:
 
 - Unique transform relations tested: `24/40` (`60.0%`).
 - Helper boundary cases emitted: `3/5` (`60.0%`).
-- Handwritten target tests covered `427/911` lines (`46.9%`).
-- Generated tests covered `260/911` lines (`28.5%`).
-- Combined tests covered `461/911` lines (`50.6%`), adding `34` covered lines
-  and `3.7` percentage points over handwritten tests.
+- Common-AST cases emitted: `2/6` (`33.3%`).
+- Interprocedural cases emitted: `4/69` (`5.8%`).
+- Handwritten target tests covered `427/911` lines (`46.9%`) but had one
+  pre-existing failing Hypothesis case.
+- Static generated tests covered `389/911` lines (`42.7%`).
+- Combined LLM-oracle generated tests covered `406/911` lines (`44.6%`) in
+  generated-only mode.
+- Both static and combined full runs covered `507/911` lines (`55.7%`), adding
+  `80` covered lines and `8.8` percentage points over handwritten tests.
+
+For the bounded Transformers slice, the stable bounded coverage run excluded
+one incompatible local target test file and six network/cache-bound target
+tests. Static coverage was `8431/621075` lines (`1.357%`), while the combined
+LLM-oracle run covered `8439/621075` lines (`1.359%`). That 8-line increase is
+real but small, and it comes from a quarantined oracle candidate rather than
+from better LLM-assisted rule generation.
 
 9. Run mutation evaluation.
 
@@ -334,6 +375,13 @@ operators, an expanded local run with `--max-mutants 16` included four
 generated suite killed all four collection-iteration mutants, increasing the
 generated-only mutation score for that run to `11/16` (`68.8%`).
 
+In the 2026-05-24 LLM comparison, a smaller six-mutant CutePetsBoston diagnostic
+sample showed no LLM-specific improvement: static and combined runs both killed
+`6/6` mutants with handwritten, generated, and combined suites, and no mutant
+was killed only by the LLM-assisted candidates. Treat that result cautiously
+because the handwritten target suite had a pre-existing failing test, but it is
+not evidence that LLM-assisted rule generation helped.
+
 10. Surface contradictions and review candidates to users.
 
 Examples:
@@ -359,12 +407,18 @@ mutation-score delta rather than only as a code diff.
 
 Priority next steps:
 
-- Validate generality on a second project. Every claim of generality currently
-  rests on `CutePetsBoston`. Run the full pipeline against at least one other
-  Python project (a Flask service, a CLI tool, or any non-trivial codebase),
-  record which rules fire, which generated tests survive, and publish the
-  delta. This single experiment tells us more about the rule layer than more
-  relations on the existing case study.
+- Treat the current LLM-assisted rule-generation lane as unsupported by the
+  latest evidence. The 2026-05-24 CutePetsBoston and bounded Transformers run
+  produced no additional semantic/test relation rows versus static rules. Keep
+  provenance-tainted mode for experiments, but do not present it as improving
+  the tool unless a future benchmark shows new validated relations.
+- Keep quarantined LLM oracle synthesis as a review lane. It produced three
+  passing promotion candidates across CutePetsBoston and bounded Transformers,
+  but those tests are not trusted evidence until a human promotes them.
+- Continue validating generality on more projects. We now have CutePetsBoston,
+  dacite, and a bounded Transformers slice, but a small-to-medium project with
+  lower dependency friction would give a clearer signal than Transformers for
+  rule quality and oracle strength.
 - Tighten or measure oracle strength in generated tests. The current
   `_assert_observed` helper in
   `generated_tests/cutepetsboston/test_generated_dataclass_properties.py`

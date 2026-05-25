@@ -13,7 +13,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.python_to_souffle import extract_facts_from_path, write_souffle_facts
-from tools.run_souffle_models import MODELS, write_summary
+from tools.provenance import merge_relation_dirs, write_provenance_outputs
+from tools.run_souffle_models import MODELS, RULE_LAYER_MODELS, write_summary
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,6 +40,16 @@ def parse_args() -> argparse.Namespace:
         "--include-tests",
         action="store_true",
         help="Include tests and manual testing files when extracting facts.",
+    )
+    parser.add_argument(
+        "--rule-mode",
+        choices=("static", "llm", "combined"),
+        default="static",
+        help=(
+            "Rule source for Souffle runs. `static` uses souffle_static_analysis, "
+            "`llm` uses rule_layer, and `combined` runs both and taints merged "
+            "findings by provenance."
+        ),
     )
     return parser.parse_args()
 
@@ -100,23 +111,23 @@ def run_python_backend(project_root: Path, work_dir: Path, include_tests: bool) 
     return write_python_fact_inventory(facts_dir, work_dir, fact_count)
 
 
-def run_souffle_backend(project_root: Path, work_dir: Path, include_tests: bool) -> Path:
-    if shutil.which("souffle") is None:
-        raise SystemExit("souffle is not installed or not on PATH.")
-
-    facts_dir = work_dir / "facts"
-    output_dirs = {
+def output_dirs_for(work_dir: Path) -> dict[str, Path]:
+    return {
         "schema": work_dir / "schema_out",
         "effect": work_dir / "effect_out",
         "deduction": work_dir / "deduction_out",
         "test": work_dir / "test_out",
         "semantic": work_dir / "semantic_out",
     }
-    for path in (facts_dir, *output_dirs.values()):
+
+
+def run_models(
+    facts_dir: Path,
+    output_dirs: dict[str, Path],
+    models: dict[str, Path],
+) -> None:
+    for path in output_dirs.values():
         path.mkdir(parents=True, exist_ok=True)
-
-    extract_to_facts_dir(project_root, facts_dir, include_tests)
-
     for model_name, output_dir in output_dirs.items():
         run_command(
             [
@@ -125,8 +136,52 @@ def run_souffle_backend(project_root: Path, work_dir: Path, include_tests: bool)
                 str(facts_dir),
                 "-D",
                 str(output_dir),
-                str(MODELS[model_name]),
+                str(models[model_name]),
             ]
+        )
+
+
+def run_souffle_backend(
+    project_root: Path,
+    work_dir: Path,
+    include_tests: bool,
+    rule_mode: str = "static",
+) -> Path:
+    if shutil.which("souffle") is None:
+        raise SystemExit("souffle is not installed or not on PATH.")
+
+    facts_dir = work_dir / "facts"
+    facts_dir.mkdir(parents=True, exist_ok=True)
+    extract_to_facts_dir(project_root, facts_dir, include_tests)
+
+    output_dirs = output_dirs_for(work_dir)
+    if rule_mode == "static":
+        run_models(facts_dir, output_dirs, MODELS)
+        write_provenance_outputs(
+            work_dir,
+            {name: (path, None) for name, path in output_dirs.items()},
+        )
+    elif rule_mode == "llm":
+        run_models(facts_dir, output_dirs, RULE_LAYER_MODELS)
+        write_provenance_outputs(
+            work_dir,
+            {name: (None, path) for name, path in output_dirs.items()},
+        )
+    else:
+        static_root = work_dir / "_static_rule_out"
+        llm_root = work_dir / "_llm_rule_out"
+        static_dirs = output_dirs_for(static_root)
+        llm_dirs = output_dirs_for(llm_root)
+        run_models(facts_dir, static_dirs, MODELS)
+        run_models(facts_dir, llm_dirs, RULE_LAYER_MODELS)
+        for model_name, output_dir in output_dirs.items():
+            merge_relation_dirs(output_dir, static_dirs[model_name], llm_dirs[model_name])
+        write_provenance_outputs(
+            work_dir,
+            {
+                name: (static_dirs[name], llm_dirs[name])
+                for name in output_dirs
+            },
         )
 
     return write_summary(work_dir)
@@ -141,7 +196,12 @@ def main() -> None:
     if args.engine == "python":
         summary_path = run_python_backend(project_root, work_dir, args.include_tests)
     else:
-        summary_path = run_souffle_backend(project_root, work_dir, args.include_tests)
+        summary_path = run_souffle_backend(
+            project_root,
+            work_dir,
+            args.include_tests,
+            args.rule_mode,
+        )
     print(summary_path)
 
 

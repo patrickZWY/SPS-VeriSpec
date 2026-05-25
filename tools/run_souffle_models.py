@@ -4,20 +4,34 @@ import argparse
 import csv
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Callable
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.provenance import merge_relation_dirs, write_provenance_outputs
+
 EXTRACTOR = ROOT / "tools" / "python_to_souffle.py"
 SOUFFLE_ANALYSIS_DIR = ROOT / "souffle_static_analysis"
+RULE_LAYER_DIR = ROOT / "rule_layer"
 MODELS = {
     "schema": SOUFFLE_ANALYSIS_DIR / "dataclass_schema_model.dl",
     "effect": SOUFFLE_ANALYSIS_DIR / "dataclass_effect_model.dl",
     "deduction": SOUFFLE_ANALYSIS_DIR / "dataclass_deduction_model.dl",
     "test": SOUFFLE_ANALYSIS_DIR / "dataclass_test_model.dl",
     "semantic": SOUFFLE_ANALYSIS_DIR / "semantic_model.dl",
+}
+RULE_LAYER_MODELS = {
+    "schema": RULE_LAYER_DIR / "dataclass_schema_model.dl",
+    "effect": RULE_LAYER_DIR / "dataclass_effect_model.dl",
+    "deduction": RULE_LAYER_DIR / "dataclass_deduction_model.dl",
+    "test": RULE_LAYER_DIR / "dataclass_test_model.dl",
+    "semantic": RULE_LAYER_DIR / "semantic_model.dl",
 }
 
 
@@ -39,11 +53,50 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Include tests and manual testing files when extracting facts.",
     )
+    parser.add_argument(
+        "--rule-mode",
+        choices=("static", "llm", "combined"),
+        default="static",
+        help=(
+            "`static` uses souffle_static_analysis, `llm` uses rule_layer, and "
+            "`combined` merges both outputs with provenance taint."
+        ),
+    )
     return parser.parse_args()
 
 
 def run_command(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True, cwd=ROOT)
+
+
+def output_dirs_for(work_dir: Path) -> dict[str, Path]:
+    return {
+        "schema": work_dir / "schema_out",
+        "effect": work_dir / "effect_out",
+        "deduction": work_dir / "deduction_out",
+        "test": work_dir / "test_out",
+        "semantic": work_dir / "semantic_out",
+    }
+
+
+def run_models(
+    facts_dir: Path,
+    output_dirs: dict[str, Path],
+    models: dict[str, Path],
+) -> None:
+    for output_dir in output_dirs.values():
+        output_dir.mkdir(parents=True, exist_ok=True)
+    for model_name, output_dir in output_dirs.items():
+        run_command(
+            [
+                "souffle",
+                "-F",
+                str(facts_dir),
+                "-D",
+                str(output_dir),
+                str(models[model_name]),
+            ]
+        )
 
 
 def read_tsv_rows(path: Path) -> list[list[str]]:
@@ -605,6 +658,30 @@ def write_summary(work_dir: Path) -> Path:
             )
         lines.append("")
 
+    provenance_rows = read_tsv_rows(work_dir / "provenance_out" / "finding_provenance.csv")
+    provenance_rows = provenance_rows[1:] if provenance_rows and provenance_rows[0][:2] == ["relation", "provenance"] else provenance_rows
+    if provenance_rows:
+        provenance_counts = Counter(
+            row[1] for row in provenance_rows if len(row) >= 2
+        )
+        lines.append("## Rule Provenance")
+        lines.append("")
+        for provenance in ("static", "llm", "mixed"):
+            lines.append(f"- `{provenance}` findings: {provenance_counts.get(provenance, 0)}")
+        lines.append("- Detailed provenance: `provenance_out/provenance_report.md`")
+        lines.append("")
+        for provenance in ("static", "llm", "mixed"):
+            examples = [
+                row for row in provenance_rows if len(row) >= 3 and row[1] == provenance
+            ][:3]
+            if not examples:
+                continue
+            lines.append(f"### {provenance.capitalize()} Examples")
+            lines.append("")
+            for relation, _provenance, row_json in examples:
+                lines.append(f"- `{relation}`: `{row_json}`")
+            lines.append("")
+
     summary_path = work_dir / "summary.md"
     summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return summary_path
@@ -615,19 +692,12 @@ def main() -> None:
     project_root = Path(args.project_root).resolve()
     work_dir = Path(args.work_dir).resolve()
     facts_dir = work_dir / "facts"
-    output_dirs = {
-        "schema": work_dir / "schema_out",
-        "effect": work_dir / "effect_out",
-        "deduction": work_dir / "deduction_out",
-        "test": work_dir / "test_out",
-        "semantic": work_dir / "semantic_out",
-    }
+    output_dirs = output_dirs_for(work_dir)
 
     if shutil.which("souffle") is None:
         raise SystemExit("souffle is not installed or not on PATH.")
 
-    for path in (facts_dir, *output_dirs.values()):
-        path.mkdir(parents=True, exist_ok=True)
+    facts_dir.mkdir(parents=True, exist_ok=True)
 
     extract_cmd = [
         "python3",
@@ -640,16 +710,33 @@ def main() -> None:
         extract_cmd.append("--include-tests")
     run_command(extract_cmd)
 
-    for model_name, output_dir in output_dirs.items():
-        run_command(
-            [
-                "souffle",
-                "-F",
-                str(facts_dir),
-                "-D",
-                str(output_dir),
-                str(MODELS[model_name]),
-            ]
+    if args.rule_mode == "static":
+        run_models(facts_dir, output_dirs, MODELS)
+        write_provenance_outputs(
+            work_dir,
+            {name: (path, None) for name, path in output_dirs.items()},
+        )
+    elif args.rule_mode == "llm":
+        run_models(facts_dir, output_dirs, RULE_LAYER_MODELS)
+        write_provenance_outputs(
+            work_dir,
+            {name: (None, path) for name, path in output_dirs.items()},
+        )
+    else:
+        static_root = work_dir / "_static_rule_out"
+        llm_root = work_dir / "_llm_rule_out"
+        static_dirs = output_dirs_for(static_root)
+        llm_dirs = output_dirs_for(llm_root)
+        run_models(facts_dir, static_dirs, MODELS)
+        run_models(facts_dir, llm_dirs, RULE_LAYER_MODELS)
+        for model_name, output_dir in output_dirs.items():
+            merge_relation_dirs(output_dir, static_dirs[model_name], llm_dirs[model_name])
+        write_provenance_outputs(
+            work_dir,
+            {
+                name: (static_dirs[name], llm_dirs[name])
+                for name in output_dirs
+            },
         )
 
     summary_path = write_summary(work_dir)

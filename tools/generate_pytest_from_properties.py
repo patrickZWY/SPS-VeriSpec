@@ -4,11 +4,22 @@ import argparse
 import csv
 import keyword
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.oracle_synthesis import (
+    build_manifest_entries,
+    collect_review_candidates,
+    load_oracle_proposals,
+    render_quarantined_oracle_tests,
+    write_llm_input_contract,
+    write_manifest,
+)
 
 
 @dataclass(frozen=True)
@@ -172,6 +183,20 @@ def parse_args() -> argparse.Namespace:
             "analysis ran on an inner package directory but tests run with the "
             "parent source root on PYTHONPATH, e.g. --import-prefix transformers."
         ),
+    )
+    parser.add_argument(
+        "--llm-oracle-proposals",
+        help=(
+            "Optional JSON file containing LLM-authored oracle test proposals. "
+            "Generated tests from this file are emitted only to the quarantined "
+            "oracle-candidate file and manifest."
+        ),
+    )
+    parser.add_argument(
+        "--max-oracle-candidates",
+        type=int,
+        default=100,
+        help="Maximum review candidates to expose in the LLM oracle input contract.",
     )
     return parser.parse_args()
 
@@ -1943,6 +1968,11 @@ def write_report(
     helper_skipped: list[str],
     common_ast_skipped: list[str],
     interprocedural_skipped: list[str],
+    oracle_input_path: Path,
+    oracle_test_path: Path,
+    oracle_manifest_path: Path,
+    oracle_candidate_count: int,
+    oracle_test_count: int,
 ) -> None:
     cwd = Path.cwd().resolve()
 
@@ -1972,6 +2002,9 @@ def write_report(
         f"- Helper boundary test file: `{display(helper_boundary_path)}`",
         f"- Common-AST test file: `{display(common_ast_path)}`",
         f"- Interprocedural test file: `{display(interprocedural_path)}`",
+        f"- LLM oracle input contract: `{display(oracle_input_path)}`",
+        f"- Quarantined LLM oracle candidate file: `{display(oracle_test_path)}`",
+        f"- LLM oracle manifest: `{display(oracle_manifest_path)}`",
         f"- Legacy transform/property cases emitted: {len(cases)}",
         f"- Dataclass schema cases emitted: {len(schema_cases)}",
         f"- Dataclass constructor cases emitted: {len(constructor_cases)}",
@@ -1979,6 +2012,8 @@ def write_report(
         f"- Helper boundary cases emitted: {len(helper_cases)}",
         f"- Common-AST cases emitted: {len(common_ast_cases)}",
         f"- Interprocedural cases emitted: {len(interprocedural_cases)}",
+        f"- Review candidates exposed for LLM oracle synthesis: {oracle_candidate_count}",
+        f"- Quarantined LLM oracle tests emitted: {oracle_test_count}",
         f"- Candidate relations left as review items: {len(skipped)}",
         f"- Helper boundary relations left as review items: {len(helper_skipped)}",
         f"- Common-AST relations left as review items: {len(common_ast_skipped)}",
@@ -2002,6 +2037,12 @@ def write_report(
         "",
         "```bash",
         f"PYTHONPATH=/path/to/target-project pytest {display(tests_path.parent)}",
+        "```",
+        "",
+        "Quarantined LLM oracle candidates are review artifacts. To classify them without turning failures into trusted suite failures:",
+        "",
+        "```bash",
+        f"PYTHONPATH=/path/to/target-project python3 tools/validate_generated_tests.py {display(oracle_test_path)} --target-project /path/to/target-project --oracle-candidates-manifest {display(oracle_manifest_path)}",
         "```",
         "",
         "To produce relation-yield, common-AST/interprocedural yield, and coverage-delta evaluation stats:",
@@ -2112,6 +2153,15 @@ def write_report(
     else:
         lines.append("- No interprocedural candidates were skipped.")
 
+    lines.extend(["", "## LLM Oracle Synthesis", ""])
+    lines.append(
+        "LLM-assisted oracle synthesis is quarantined. The input contract contains structured review evidence only; any proposed tests are written separately and tracked in the manifest."
+    )
+    lines.append(f"- Input candidates: {oracle_candidate_count}")
+    lines.append(f"- Candidate tests emitted: {oracle_test_count}")
+    lines.append("- Passing candidates require human promotion before joining the trusted generated suite.")
+    lines.append("- Failing candidates are reported as conflicts or weak oracles, not as bugs by default.")
+
     lines.extend(
         [
             "",
@@ -2184,6 +2234,13 @@ def main() -> None:
         fields,
         args.max_cases,
     )
+    oracle_candidates = collect_review_candidates(
+        analysis_dir,
+        max_candidates=args.max_oracle_candidates,
+    )
+    oracle_proposals = load_oracle_proposals(
+        Path(args.llm_oracle_proposals).resolve() if args.llm_oracle_proposals else None
+    )
 
     tests_path = output_dir / "test_generated_dataclass_properties.py"
     hypothesis_path = output_dir / "test_generated_dataclass_hypothesis.py"
@@ -2192,6 +2249,9 @@ def main() -> None:
     helper_boundary_path = output_dir / "test_generated_helper_boundaries.py"
     common_ast_path = output_dir / "test_generated_common_ast_properties.py"
     interprocedural_path = output_dir / "test_generated_interprocedural_properties.py"
+    oracle_input_path = output_dir / "llm_oracle_input.json"
+    oracle_test_path = output_dir / "test_generated_llm_oracle_candidates.py"
+    oracle_manifest_path = output_dir / "oracle_candidates.json"
     report_path = output_dir / "README.md"
     tests_path.write_text(
         render_test_file(cases, args.import_prefix),
@@ -2225,6 +2285,17 @@ def main() -> None:
         render_interprocedural_test_file(interprocedural_cases, args.import_prefix),
         encoding="utf-8",
     )
+    write_llm_input_contract(oracle_input_path, oracle_candidates)
+    oracle_test_path.write_text(
+        render_quarantined_oracle_tests(oracle_proposals),
+        encoding="utf-8",
+    )
+    oracle_manifest_entries = build_manifest_entries(
+        oracle_candidates,
+        oracle_proposals,
+        oracle_test_path.name,
+    )
+    write_manifest(oracle_manifest_path, oracle_manifest_entries)
     write_report(
         report_path,
         analysis_dir,
@@ -2241,6 +2312,11 @@ def main() -> None:
         helper_skipped,
         common_ast_skipped,
         interprocedural_skipped,
+        oracle_input_path,
+        oracle_test_path,
+        oracle_manifest_path,
+        len(oracle_candidates),
+        len(oracle_manifest_entries),
     )
 
     print(tests_path)
@@ -2250,6 +2326,9 @@ def main() -> None:
     print(helper_boundary_path)
     print(common_ast_path)
     print(interprocedural_path)
+    print(oracle_input_path)
+    print(oracle_test_path)
+    print(oracle_manifest_path)
     print(report_path)
 
 

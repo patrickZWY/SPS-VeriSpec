@@ -14,12 +14,22 @@ to any Python project you want to analyze.
 
 ## High-level workflow
 
-The active pipeline today is purely static. It runs the Python extractor and
-the Souffle rules under `souffle_static_analysis/`, then turns the derived CSV
-relations into pytest files. `rule_layer/` is a legacy snapshot of the
-project-specific findings notes that the current `tools/` orchestration does
-not invoke; re-incorporating it (and the planned LLM-assisted semantic layer)
-is tracked under future work.
+The trusted executable pipeline today remains static. It runs the Python
+extractor and the Souffle rules under `souffle_static_analysis/`, then turns the
+derived CSV relations into pytest files. Optional LLM-assisted rule and oracle
+lanes are quarantined review inputs: they may propose rules or tests, but they
+do not silently become trusted evidence.
+
+Evidence from the 2026-05-24 CutePetsBoston and bounded Transformers
+evaluation argues against treating the current LLM-assisted rule lane as a win.
+For both targets, static, LLM-only, and combined rule modes produced identical
+semantic/test relation outputs: CutePetsBoston stayed at `62` relations and
+`1477` rows, and the bounded Transformers slice stayed at `62` relations and
+`2326` rows. The combined provenance report marked findings as `mixed`
+(`2885` CutePetsBoston rows and `4966` Transformers rows), but no extra
+semantic/test rows appeared. The useful LLM contribution in that run was only
+the quarantined oracle lane: it produced two passing CutePetsBoston promotion
+candidates and one passing Transformers promotion candidate.
 
 ```text
 Python source
@@ -28,8 +38,9 @@ Python source
    (dataclass schema/effect/deduction, test-target, semantic,
     interprocedural dataflow, slicing, abstract states,
     typestate/protocol, common-AST relations)
+-> optional LLM-assisted rule mode with provenance taint
 -> derived CSV relations and Markdown summaries
--> conservative generated pytest tests plus review candidates
+-> conservative generated pytest tests plus quarantined review candidates
 -> validation, coverage/evaluation reports, and mutation evaluation
 ```
 
@@ -46,6 +57,15 @@ generation must be treated as a separate layer. The first generator was
 overfit to CutePetsBoston-shaped transforms: public `format*` methods, simple
 string/list observations, and dataclass-to-dataclass field flow. That pattern
 does not cover many dataclass-heavy libraries.
+
+The current LLM-assisted rule-generation path should not be presented as
+improving the rule layer. In the CutePetsBoston plus bounded Transformers
+comparison, it generated no additional semantic/test relation rows over static
+rules. Keep it available only as an experimental provenance-tainted mode unless
+a future run shows new high-quality relations that survive validation. The LLM
+oracle-synthesis path is more useful because its output is explicitly
+quarantined: passing synthesized tests are promotion candidates, while failing
+tests are review records rather than trusted-suite failures.
 
 The portable oracle families are now:
 
@@ -91,6 +111,12 @@ Use this protocol for each target project:
      --work-dir /tmp/sps-<project-name>-souffle
    ```
 
+   To evaluate optional LLM-assisted rule generation, run comparable static,
+   LLM-only, and combined modes and compare `semantic_out/` plus `test_out/`
+   rows before claiming improvement. The 2026-05-24 CutePetsBoston and bounded
+   Transformers run found no semantic/test row delta for LLM-assisted rules, so
+   the default recommendation remains the static trusted rule set.
+
 4. Inspect and summarize both analysis reports:
    - `/tmp/sps-<project-name>-python/summary.md`
    - `/tmp/sps-<project-name>-souffle/summary.md`
@@ -109,6 +135,12 @@ Use this protocol for each target project:
    If analysis was intentionally run on an inner package directory, pass
    `--import-prefix <top_level_package>` so generated imports match the target
    project root used during validation.
+
+   Quarantined LLM oracle proposals can be generated from review candidates
+   into `test_generated_llm_oracle_candidates.py` and `oracle_candidates.json`.
+   These tests must stay outside the trusted suite until reviewed. In the
+   2026-05-24 run, CutePetsBoston produced two passing promotion candidates and
+   the bounded Transformers slice produced one passing promotion candidate.
 6. Prepare a disposable validation environment for target dependencies.
 
    The main `.venv` is for SPS-VeriSpec development dependencies only. Do not
@@ -145,7 +177,9 @@ Use this protocol for each target project:
    ```
 
    For example, installing Transformers runtime dependencies changed the bounded
-   Transformers generated suite from mostly skipped to `99 passed, 7 skipped`.
+   Transformers generated suite from mostly skipped to `99 passed, 8 skipped`
+   for static generation and `99 passed, 7 skipped, 1 xpassed` for the combined
+   LLM-oracle run.
 
 8. Run coverage and visualization evaluation when the target has a test suite
    and generated tests are importable:
@@ -332,13 +366,23 @@ facts, lossy-flow candidates, interprocedural slices without strong executable
 oracles, and other lower-confidence relations in the generated report until
 stronger oracles are available.
 
-For the current CutePetsBoston snapshot, the generated suite contains 73 tests
-and validates cleanly against the local target checkout. The dacite
+The LLM oracle generator is separate from this conservative path. It writes
+quarantined candidates and a manifest with provenance, oracle strength, and
+validation classification. In the 2026-05-24 evaluation, these candidates
+helped only as review artifacts: CutePetsBoston got two passing promotion
+candidates, and the bounded Transformers slice got one passing promotion
+candidate. They did not change trusted relation yield.
+
+For the current CutePetsBoston snapshot, the static generated suite validated
+with `89 passed, 2 skipped`. The combined LLM-oracle run validated with
+`89 passed, 1 skipped, 2 xpassed`, and the oracle-only validation showed
+`2 passed`. The dacite
 generalization experiment also produces executable non-formatter tests: runtime
 schema/default checks plus a `from_dict` conversion-profile oracle. A bounded
-Transformers dataclass-heavy slice validates with `99 passed, 7 skipped` after
-installing runtime dependencies; the remaining skips are empty non-applicable
-generated files and the expected `AddedToken` optional-dependency runtime case.
+Transformers dataclass-heavy slice validates with `99 passed, 8 skipped` for
+static generation and `99 passed, 7 skipped, 1 xpassed` for the combined
+LLM-oracle run after installing runtime dependencies; the oracle-only validation
+showed `1 passed`.
 
 To run generated tests and write a validation summary:
 
@@ -378,6 +422,16 @@ and reports the coverage delta added by generated tests. It currently includes
 relation-yield views for dataclass transforms, helper boundaries, common-AST
 relations, and interprocedural observable-slice cases.
 
+In the 2026-05-24 comparison, CutePetsBoston static and combined runs had the
+same conservative relation yield: `24/40` transform relations, `3/5` helper
+boundaries, `2/6` common-AST cases, and `4/69` interprocedural cases. The
+combined source coverage was identical in both modes at `507/911` lines
+(`55.7%`); the target's handwritten suite still had one pre-existing failing
+Hypothesis case unrelated to generated tests. On the stable bounded
+Transformers pass, static coverage was `8431/621075` lines (`1.357%`) and the
+combined LLM-oracle pass was `8439/621075` lines (`1.359%`), an 8-line gain
+from the quarantined oracle candidate.
+
 To run a small mutation evaluation over relation-guided transform mutants,
 common-AST collection-iteration mutants, interprocedural pipeline mutants, and
 solver-adjacent boundary mutants:
@@ -399,6 +453,11 @@ observed collection-iteration contributions, replace pipeline stages that
 participate in multi-hop interprocedural flows, tighten or weaken comparison
 operators, perturb boundary constants near derived numeric bounds, and remove
 simple truncation markers.
+
+The 2026-05-24 CutePetsBoston LLM comparison used a small six-mutant diagnostic
+sample because the target's handwritten suite had a pre-existing failure. Both
+static and combined runs killed `6/6` mutants with handwritten, generated, and
+combined suites; no mutant was killed only by the LLM-assisted candidate tests.
 
 ## Development requirement
 
@@ -489,8 +548,9 @@ facts into higher-level test obligations with clear oracles.
 - `souffle_static_analysis/`: runnable Souffle/Datalog static-analysis backend.
   It includes schema, effect, deduction, test-target, semantic,
   interprocedural, slicing, abstract-state, typestate, and boundary rules.
-- `rule_layer/`: legacy location for the generic Souffle models and findings
-  notes. New separated backend runs use `souffle_static_analysis/`.
+- `rule_layer/`: optional LLM-assisted rule source used only in
+  provenance-tainted experimental modes. The trusted static backend remains
+  `souffle_static_analysis/`.
 - `rule_layer_impl/`: project-specific interpretation notes for the CutePetsBoston analysis results.
 - `prototype_tests/`: unit tests for the Python AST extractor and fact writer.
 - `example.md`: current end-to-end workflow and examples of derived relations that can become tests.
@@ -524,6 +584,8 @@ Implemented:
   `kw_only`, `slots`, and `weakref_slot`.
 - One-command analysis runner with Markdown summary output, plus separated
   backend selection for Souffle-derived analysis versus Python fact inventory.
+- Optional rule modes for static, LLM-assisted, and combined Souffle runs, with
+  provenance taint reported as `static`, `llm`, or `mixed`.
 - Semantic field-flow, composed-flow, observable-required-field,
   lossy-field-candidate, literal-status, string-composition, numeric-boundary,
   and boundary-test derivations.
@@ -576,15 +638,28 @@ Implemented:
   length, and status/result literals.
 - Initial typestate/protocol candidates for validate/authenticate-before-publish
   and open-before-close style ordering mistakes.
+- Quarantined LLM oracle candidate generation with `oracle_candidates.json`
+  manifests, prompt/input hashes, source provenance, oracle strength,
+  validation results, and promotion/conflict classifications.
+- Validation handling for quarantined LLM oracle tests so failures are recorded
+  as review records rather than trusted generated-suite failures.
 
 Still future work:
 
-- Turn conservative/risky properties into executable oracles.
+- Promote reviewed quarantined oracle candidates into trusted generated tests
+  only after human acceptance, and record why rejected candidates were weak
+  or ungrounded.
 
-- Re-incorporate now unused rule_layer into our pipeline because it once
-  provided a lot of help to understand the CutePetsBoston project and the
-  lessons should be generalized and extended for others. A pure static
-  analysis layer by itself is not enough.
+- Do not invest further in the current LLM-assisted rule-generation path unless
+  it starts producing additional validated semantic/test relations. The
+  2026-05-24 CutePetsBoston and bounded Transformers comparison found no
+  semantic/test row delta versus static rules. Preserve provenance-tainted mode
+  for experiments, but prioritize the quarantined oracle lane and static rule
+  quality.
+
+- Keep quarantined LLM oracle synthesis, but treat it as review support rather
+  than evidence. Passing LLM-created tests are promotion candidates; they should
+  not enter the trusted generated suite without human review.
 
 - Broaden the benchmark set beyond CutePetsBoston, dacite, and the bounded
   Transformers slice. The next targets should be small-to-medium
