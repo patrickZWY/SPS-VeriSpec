@@ -644,6 +644,14 @@ Implemented:
 - Validation handling for quarantined LLM oracle tests so failures are recorded
   as review records rather than trusted generated-suite failures.
 
+Priority future work:
+
+- Try the type checker case study where more advanced expressions composed from
+  simpler expressions expose errors. First investigate by hand what parts of an
+  expression should be analyzed and extracted. Make it a policy and see if we
+  can deduce a more complex test that is similar to the one that exposed the bug
+  I had.
+
 Still future work:
 
 - Promote reviewed quarantined oracle candidates into trusted generated tests
