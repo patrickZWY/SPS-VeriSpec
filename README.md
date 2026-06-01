@@ -646,11 +646,26 @@ Implemented:
 
 Priority future work:
 
-- Try the type checker case study where more advanced expressions composed from
-  simpler expressions expose errors. First investigate by hand what parts of an
-  expression should be analyzed and extracted. Make it a policy and see if we
-  can deduce a more complex test that is similar to the one that exposed the bug
-  I had.
+- Type checker case study (first implementation in `type_checker_case_study/`).
+  The Hindley-Milner checker in `../cs4820/type-checker` is ported to Python as
+  a trusted oracle (parity-tested against its combinator suite). A scope-aware
+  loop progressively composes the eight elementary expression forms and
+  *validates each composite against the oracle* rather than proving outcomes
+  conservatively. A Souffle policy (`policy/expr_policy.dl`) predicts outcomes
+  structurally; `policy_eval.py` measures it against the validated ground truth.
+  First findings: the policy is sound for the ill-typed/well-typed decision
+  (zero false positives) because it keys on the `Lam`-vs-`Let` binder
+  distinction, but error *class* is a whole-composition property, and ~2,100
+  ill-typed composites can only be decided by the oracle/tests -- the quantified
+  argument for progressive validation. The discriminating mutations are promoted
+  into a strict-equality pytest suite by `generate_flip_tests.py` (written to
+  `generated_tests/type_checker_case_study/`) and run through the repo-wide
+  evaluation lane: `tools/validate_generated_tests.py` produces the
+  `validation_report.md`, and `type_checker_case_study/mutation_drive.py` reuses
+  the `tools/mutation_eval.py` report machinery with checker-logic mutation
+  operators -- the boundary suite kills all current mutants on its own.
+  Remaining: richer policy predictors, principal-type-shape prediction (not just
+  error classes), and equivalent-mutant probes.
 
 Still future work:
 

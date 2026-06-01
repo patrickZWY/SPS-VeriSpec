@@ -13,19 +13,13 @@
 ## Command
 
 ```bash
-/Users/zhengwangyuan/repos/SPS-VeriSpec/.venv/bin/python -m pytest -q /Users/zhengwangyuan/repos/SPS-VeriSpec/generated_tests/dacite -rs
+/Users/zhengwangyuan/repos/SPS-VeriSpec/.venv/bin/python -m pytest -q /Users/zhengwangyuan/repos/SPS-VeriSpec/generated_tests/dacite
 ```
 
 ## Pytest Output
 
 ```text
 s.ss..ss                                                                 [100%]
-=========================== short test summary info ============================
-SKIPPED [1] generated_tests/dacite/test_generated_common_ast_properties.py:66: got empty parameter set for (case)
-SKIPPED [1] generated_tests/dacite/test_generated_dataclass_hypothesis.py:131: got empty parameter set for (case)
-SKIPPED [1] generated_tests/dacite/test_generated_dataclass_properties.py:81: got empty parameter set for (case)
-SKIPPED [1] generated_tests/dacite/test_generated_helper_boundaries.py:51: got empty parameter set for (case)
-SKIPPED [1] generated_tests/dacite/test_generated_interprocedural_properties.py:76: got empty parameter set for (case)
-3 passed, 5 skipped in 0.49s
+3 passed, 5 skipped in 0.20s
 
 ```

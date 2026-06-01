@@ -2,3 +2,12 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+
+# Type-checker case study: transient Souffle work + large generated catalogs.
+type_checker_case_study/out/policy_work/
+type_checker_case_study/out/*.csv
+
+# Mutation-evaluation artifacts are regenerable; match the repo convention of
+# tracking only validation_report.md under generated_tests/.
+generated_tests/type_checker_case_study/mutation_eval.md
+generated_tests/type_checker_case_study/mutation_eval.json

@@ -1,0 +1,65 @@
+// Datalog composition policy for the type-checker case study.
+//
+// The policy predicts type-checker outcomes *structurally*, from the elementary
+// expression forms and their resolved binding, without running inference. It is
+// deliberately partial: it only claims the error classes that are sound
+// consequences of structure. Everything it cannot decide is left to the oracle
+// (the progressive validation loop). The gap between what the policy predicts
+// and what the oracle validates is the informal-to-formal feedback signal.
+//
+// Run:
+//   souffle -F <facts-dir> -D <out-dir> type_checker_case_study/policy/expr_policy.dl
+
+.decl node(e:number, n:number, tag:symbol)
+.input node
+
+.decl child(e:number, parent:number, slot:symbol, c:number)
+.input child
+
+// A variable occurrence resolved to its nearest binder. binder = -1 and
+// kind = "unbound" when no enclosing Lam/Let binds the name.
+.decl var_ref(e:number, n:number, name:symbol, binder:number, kind:symbol)
+.input var_ref
+
+// ----------------------------------------------------------------------
+// Sound structural predictor 1: unbound variable.
+// If any occurrence is unbound the expression cannot type-check, and the
+// checker reports "Unbound variable". This is purely a scoping property.
+// ----------------------------------------------------------------------
+.decl predict_unbound(e:number)
+.output predict_unbound
+predict_unbound(e) :- var_ref(e, _, _, _, "unbound").
+
+// ----------------------------------------------------------------------
+// Sound structural predictor 2: lambda self-application.
+// App(Var v, Var v) where both occurrences resolve to the SAME lambda binder.
+// A monomorphic (lambda-bound) variable applied to itself forces t = t -> s,
+// which always fails the occurs check. Crucially this does NOT fire when the
+// shared binder is a `let` binding, because let-polymorphism gives each use a
+// fresh instance and self-application can succeed. That Lam-vs-Let distinction
+// is the whole point of resolving binder kind.
+// ----------------------------------------------------------------------
+.decl predict_occurs(e:number)
+.output predict_occurs
+predict_occurs(e) :-
+    node(e, app, "App"),
+    child(e, app, "fun", f),
+    child(e, app, "arg", arg),
+    var_ref(e, f, _, b, "Lam"),
+    var_ref(e, arg, _, b, "Lam").
+
+// ----------------------------------------------------------------------
+// Combined prediction. unbound is reported in preference to occurs-check when
+// both structural conditions hold, matching the checker's left-to-right
+// failure order (a free variable is hit before the application is unified).
+// ----------------------------------------------------------------------
+.decl predicted_ill(e:number, error_class:symbol)
+.output predicted_ill
+predicted_ill(e, "unbound-variable") :- predict_unbound(e).
+predicted_ill(e, "occurs-check") :- predict_occurs(e), !predict_unbound(e).
+
+// Expressions the policy makes any claim about (so the comparator can separate
+// "policy decided" from "only the oracle/tests can decide").
+.decl policy_decided(e:number)
+.output policy_decided
+policy_decided(e) :- predicted_ill(e, _).

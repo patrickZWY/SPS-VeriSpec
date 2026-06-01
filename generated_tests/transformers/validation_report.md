@@ -3,10 +3,10 @@
 - Generated tests: `/Users/zhengwangyuan/repos/SPS-VeriSpec/generated_tests/transformers`
 - Target project: `/Users/zhengwangyuan/repos/SPS-VeriSpec/transformers/src`
 - Return code: `0`
-- Passed: 99
+- Passed: 0
 - Failed: 0
 - Errors: 0
-- Skipped: 7
+- Skipped: 106
 - XFailed: 0
 - XPassed: 0
 
@@ -19,22 +19,21 @@
 ## Pytest Output
 
 ```text
-ssss................................................s................... [ 67%]
-................................ss                                       [100%]
-=============================== warnings summary ===============================
-generated_tests/transformers/test_generated_dataclass_schema.py::test_generated_dataclass_constructor_defaults[constructor-modeling_attn_mask_utils-AttentionMaskConverter]
-  /Users/zhengwangyuan/repos/SPS-VeriSpec/transformers/src/transformers/modeling_attn_mask_utils.py:71: FutureWarning: The attention mask API under `transformers.modeling_attn_mask_utils` (`AttentionMaskConverter`) is deprecated and will be removed in Transformers v5.10. Please use the new API in `transformers.masking_utils`.
-    warnings.warn(DEPRECATION_MESSAGE, FutureWarning)
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss [ 67%]
+ssssssssssssssssssssssssssssssssss                                       [100%]
 =========================== short test summary info ============================
 SKIPPED [1] generated_tests/transformers/test_generated_common_ast_properties.py:66: got empty parameter set for (case)
 SKIPPED [1] generated_tests/transformers/test_generated_dataclass_conversions.py:75: got empty parameter set for (case)
 SKIPPED [1] generated_tests/transformers/test_generated_dataclass_hypothesis.py:131: got empty parameter set for (case)
 SKIPPED [1] generated_tests/transformers/test_generated_dataclass_properties.py:81: got empty parameter set for (case)
-SKIPPED [1] generated_tests/transformers/test_generated_dataclass_schema.py:965: tokenizers.AddedToken is not a runtime dataclass in this dependency configuration
+SKIPPED [7] generated_tests/transformers/test_generated_dataclass_schema.py:879: Cannot import transformers.generation.configuration_utils: No module named 'numpy'
+SKIPPED [2] generated_tests/transformers/test_generated_dataclass_schema.py:879: Cannot import transformers.modeling_attn_mask_utils: No module named 'numpy'
+SKIPPED [84] generated_tests/transformers/test_generated_dataclass_schema.py:879: Cannot import transformers.modeling_outputs: No module named 'numpy'
+SKIPPED [1] generated_tests/transformers/test_generated_dataclass_schema.py:879: Cannot import transformers.tokenization_utils_base: No module named 'numpy'
+SKIPPED [4] generated_tests/transformers/test_generated_dataclass_schema.py:879: Cannot import transformers.trainer_callback: No module named 'numpy'
+SKIPPED [2] generated_tests/transformers/test_generated_dataclass_schema.py:879: Cannot import transformers.utils.loading_report: No module named 'numpy'
 SKIPPED [1] generated_tests/transformers/test_generated_helper_boundaries.py:51: got empty parameter set for (case)
 SKIPPED [1] generated_tests/transformers/test_generated_interprocedural_properties.py:76: got empty parameter set for (case)
-99 passed, 7 skipped, 1 warning in 3.77s
+106 skipped in 0.75s
 
 ```
