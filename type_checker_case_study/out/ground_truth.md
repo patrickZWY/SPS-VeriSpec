@@ -1,0 +1,327 @@
+# Type-checker case study: validated ground truth
+
+Progressive composition of the eight elementary expression forms, each composite validated against the ported Algorithm W oracle. This is the set of facts that *hold for the program* within the search budget -- not a conservative over-approximation.
+
+## Search budget
+
+- Mutation rounds: 4
+- Max expression size (nodes): 9
+- Distinct closed expressions discovered: 5617
+- Mutation edges explored: 5613
+
+## What holds
+
+- Well-typed: 2645 (47.1%)
+- Ill-typed: 2972 (52.9%)
+
+### Principal-type shapes (well-typed)
+
+- `Bool`: 622
+- `(a -> Bool)`: 403
+- `(a -> (b -> Bool))`: 197
+- `(a -> a)`: 183
+- `(a -> (b -> b))`: 140
+- `(a -> (b -> (c -> Bool)))`: 70
+- `(Bool -> Bool)`: 68
+- `((Bool -> a) -> a)`: 58
+- `(a -> (Bool -> Bool))`: 58
+- `(a -> (b -> (c -> c)))`: 54
+- `(a -> ((Bool -> b) -> b))`: 47
+- `((Bool -> Bool) -> Bool)`: 32
+- `(a -> Int)`: 28
+- `(Bool -> (a -> Bool))`: 27
+- `((Bool -> (Bool -> a)) -> a)`: 27
+- `((Bool -> a) -> (b -> a))`: 26
+- `((a -> b) -> (a -> b))`: 23
+- `(a -> ((a -> b) -> b))`: 21
+- `Int`: 19
+- `(((a -> Bool) -> b) -> b)`: 18
+- `(((a -> a) -> b) -> b)`: 16
+- `(a -> (b -> (c -> (d -> d))))`: 13
+- `(a -> (b -> Int))`: 11
+- `(a -> (b -> (c -> (d -> Bool))))`: 11
+- `((Bool -> (Bool -> a)) -> b)`: 11
+- `((Bool -> a) -> b)`: 11
+- `(a -> ((Bool -> Bool) -> Bool))`: 10
+- `((Bool -> a) -> Bool)`: 9
+- `(a -> (b -> ((Bool -> c) -> c)))`: 8
+- `(a -> (((b -> b) -> c) -> c))`: 8
+- `((Bool -> (a -> a)) -> (a -> a))`: 8
+- `(a -> (b -> (c -> Int)))`: 6
+- `(((a -> (b -> b)) -> c) -> c)`: 6
+- `(Bool -> (Bool -> Bool))`: 6
+- `(a -> ((b -> b) -> (b -> b)))`: 6
+- `(a -> ((b -> Bool) -> (b -> Bool)))`: 6
+- `((Bool -> (a -> Bool)) -> (a -> Bool))`: 6
+- `(a -> ((b -> c) -> (b -> c)))`: 5
+- `(a -> (b -> ((b -> c) -> c)))`: 5
+- `(a -> ((Bool -> b) -> (c -> b)))`: 5
+- `(a -> (b -> (c -> (d -> (e -> e)))))`: 5
+- `((Int -> a) -> a)`: 4
+- `((Bool -> (Int -> a)) -> a)`: 4
+- `(a -> (((b -> Bool) -> c) -> c))`: 4
+- `(((a -> a) -> b) -> (c -> b))`: 4
+- `(a -> (b -> a))`: 4
+- `((Bool -> Int) -> Int)`: 4
+- `(((a -> (b -> Bool)) -> c) -> c)`: 4
+- `(Bool -> ((Bool -> Bool) -> Bool))`: 4
+- `((Bool -> Bool) -> (Bool -> Bool))`: 4
+- `(Bool -> (a -> a))`: 4
+- `a`: 4
+- `(a -> (b -> (c -> (Bool -> Bool))))`: 4
+- `(a -> (b -> (c -> ((Bool -> d) -> d))))`: 4
+- `(a -> (b -> (c -> (d -> (e -> Bool)))))`: 4
+- `((Bool -> a) -> (b -> Bool))`: 4
+- `(a -> ((Int -> b) -> b))`: 4
+- `((a -> Bool) -> (a -> Bool))`: 3
+- `(a -> (b -> (Bool -> Bool)))`: 3
+- `(a -> ((Bool -> (Bool -> b)) -> b))`: 3
+- `((Bool -> a) -> (Bool -> a))`: 3
+- `((Bool -> ((a -> Bool) -> b)) -> b)`: 3
+- `(a -> (b -> ((c -> d) -> (c -> d))))`: 3
+- `(a -> (b -> (c -> ((c -> d) -> d))))`: 3
+- `(a -> (b -> (Bool -> (c -> Bool))))`: 3
+- `(a -> (b -> ((Bool -> c) -> (d -> c))))`: 3
+- `(a -> ((Bool -> b) -> Bool))`: 3
+- `((Bool -> a) -> (b -> b))`: 3
+- `(a -> (b -> ((Bool -> (Bool -> c)) -> c)))`: 3
+- `(a -> (b -> ((Bool -> Bool) -> Bool)))`: 3
+- `(a -> (b -> (((c -> c) -> d) -> d)))`: 3
+- `(a -> (b -> (((c -> Bool) -> d) -> d)))`: 3
+- `((Bool -> ((a -> (b -> b)) -> c)) -> c)`: 3
+- `((Bool -> (a -> b)) -> c)`: 3
+- `((a -> a) -> (a -> a))`: 2
+- `(a -> (Bool -> (b -> Bool)))`: 2
+- `((a -> b) -> (a -> (c -> b)))`: 2
+- `((a -> b) -> (c -> (a -> b)))`: 2
+- `(a -> ((a -> b) -> (c -> b)))`: 2
+- `(a -> (b -> ((a -> c) -> c)))`: 2
+- `((Bool -> a) -> (b -> (c -> a)))`: 2
+- `((Bool -> Bool) -> (a -> Bool))`: 2
+- `(((a -> Bool) -> b) -> (c -> b))`: 2
+- `((Bool -> ((a -> a) -> b)) -> b)`: 2
+- `(((a -> a) -> (Bool -> b)) -> b)`: 2
+- `(((a -> Bool) -> (Bool -> b)) -> b)`: 2
+- `((Bool -> Bool) -> a)`: 2
+- `((Bool -> (Bool -> a)) -> Bool)`: 2
+- `(((Bool -> a) -> a) -> ((Bool -> a) -> a))`: 2
+- `((a -> (b -> b)) -> (a -> (b -> b)))`: 2
+- `((a -> (b -> Bool)) -> (a -> (b -> Bool)))`: 2
+- `(a -> ((b -> c) -> (b -> (d -> c))))`: 2
+- `(a -> ((b -> c) -> (d -> (b -> c))))`: 2
+- `(a -> (b -> ((b -> c) -> (d -> c))))`: 2
+- `(a -> (b -> (c -> ((b -> d) -> d))))`: 2
+- `(a -> (Bool -> (b -> (c -> Bool))))`: 2
+- `(a -> ((Bool -> b) -> (c -> (d -> b))))`: 2
+- `((a -> b) -> Bool)`: 2
+- `(((a -> Int) -> b) -> b)`: 2
+- `((Int -> a) -> (b -> a))`: 2
+- `(a -> ((b -> (Bool -> c)) -> (b -> c)))`: 2
+- `(a -> (b -> ((b -> (Bool -> c)) -> c)))`: 2
+- `(a -> ((Bool -> (Bool -> b)) -> (c -> b)))`: 2
+- `(a -> ((b -> c) -> (c -> c)))`: 2
+- `(a -> ((b -> c) -> (((b -> c) -> b) -> c)))`: 2
+- `(a -> ((Bool -> Bool) -> (b -> Bool)))`: 2
+- `(a -> ((Bool -> b) -> (Bool -> b)))`: 2
+- `(a -> ((b -> c) -> ((Bool -> b) -> c)))`: 2
+- `(a -> (((b -> b) -> c) -> (d -> c)))`: 2
+- `(a -> (((b -> Bool) -> c) -> (d -> c)))`: 2
+- `(a -> (b -> ((b -> (b -> c)) -> c)))`: 2
+- `(a -> (b -> ((Bool -> (b -> c)) -> c)))`: 2
+- `(a -> (b -> (c -> b)))`: 2
+- `(a -> ((b -> (b -> c)) -> (b -> c)))`: 2
+- `(a -> ((Bool -> (b -> c)) -> (b -> c)))`: 2
+- `(a -> (((b -> c) -> b) -> ((b -> c) -> c)))`: 2
+- `(a -> (b -> ((c -> b) -> b)))`: 2
+- `(a -> (Bool -> ((Bool -> b) -> b)))`: 2
+- `(a -> ((Bool -> b) -> ((b -> c) -> c)))`: 2
+- `(a -> ((Bool -> Int) -> Int))`: 2
+- `(a -> ((Bool -> ((b -> Bool) -> c)) -> c))`: 2
+- `(a -> (((Bool -> Bool) -> b) -> b))`: 2
+- `(a -> ((((Bool -> b) -> b) -> c) -> c))`: 2
+- `(a -> (((b -> (c -> c)) -> d) -> d))`: 2
+- `(a -> (((b -> (c -> Bool)) -> d) -> d))`: 2
+- `(a -> ((Bool -> ((b -> b) -> c)) -> c))`: 2
+- `((Bool -> ((a -> (b -> Bool)) -> c)) -> c)`: 2
+- `((Int -> (Bool -> a)) -> a)`: 2
+- `((Int -> (Int -> a)) -> a)`: 2
+- `((a -> Bool) -> a)`: 2
+- `(Bool -> (a -> (b -> Bool)))`: 1
+- `((a -> (Bool -> b)) -> (a -> b))`: 1
+- `(a -> ((a -> (Bool -> b)) -> b))`: 1
+- `((Bool -> (Bool -> a)) -> (b -> a))`: 1
+- `((a -> b) -> (b -> b))`: 1
+- `((a -> b) -> (((a -> b) -> a) -> b))`: 1
+- `((a -> b) -> ((Bool -> a) -> b))`: 1
+- `(a -> ((a -> (a -> b)) -> b))`: 1
+- `(a -> ((Bool -> (a -> b)) -> b))`: 1
+- `((a -> (a -> b)) -> (a -> b))`: 1
+- `((Bool -> (a -> b)) -> (a -> b))`: 1
+- `(((a -> b) -> a) -> ((a -> b) -> b))`: 1
+- `(a -> ((b -> a) -> a))`: 1
+- `(Bool -> ((Bool -> a) -> a))`: 1
+- `((Bool -> a) -> ((a -> b) -> b))`: 1
+- `(Bool -> Int)`: 1
+- `((Bool -> Bool) -> Int)`: 1
+- `(((Bool -> Bool) -> a) -> a)`: 1
+- `((((Bool -> a) -> a) -> b) -> b)`: 1
+- `(a -> ((a -> Bool) -> Bool))`: 1
+- `(((a -> a) -> (a -> a)) -> (a -> a))`: 1
+- `(((a -> Bool) -> (a -> Bool)) -> (a -> Bool))`: 1
+- `(((a -> a) -> Bool) -> Bool)`: 1
+- `(((a -> Bool) -> Bool) -> Bool)`: 1
+- `((Bool -> Bool) -> (a -> a))`: 1
+- `(a -> (b -> (c -> (d -> Int))))`: 1
+- `(a -> (b -> (c -> ((a -> d) -> d))))`: 1
+- `((a -> b) -> (c -> (d -> (a -> b))))`: 1
+- `((a -> b) -> (a -> (c -> (d -> b))))`: 1
+- `((a -> b) -> (c -> (a -> (d -> b))))`: 1
+- `(a -> ((a -> b) -> (c -> (d -> b))))`: 1
+- `(a -> (b -> ((a -> c) -> (d -> c))))`: 1
+- `(Bool -> (a -> (b -> (c -> Bool))))`: 1
+- `((Bool -> a) -> (b -> (c -> (d -> a))))`: 1
+- `((Bool -> ((a -> Int) -> b)) -> b)`: 1
+- `(((a -> a) -> (Int -> b)) -> b)`: 1
+- `(((a -> Bool) -> (Int -> b)) -> b)`: 1
+- `(a -> ((Bool -> (Int -> b)) -> b))`: 1
+- `(a -> (Bool -> Int))`: 1
+- `(a -> ((Bool -> Bool) -> Int))`: 1
+- `((a -> b) -> (a -> Bool))`: 1
+- `(a -> ((a -> b) -> Bool))`: 1
+- `((a -> (Bool -> b)) -> (a -> (c -> b)))`: 1
+- `((a -> (Bool -> b)) -> (c -> (a -> b)))`: 1
+- `(a -> ((a -> (Bool -> b)) -> (c -> b)))`: 1
+- `(a -> (b -> ((a -> (Bool -> c)) -> c)))`: 1
+- `((Bool -> (Bool -> a)) -> (b -> (c -> a)))`: 1
+- `((a -> b) -> (b -> (c -> b)))`: 1
+- `((a -> b) -> (c -> (b -> b)))`: 1
+- `((a -> b) -> (((a -> b) -> a) -> (c -> b)))`: 1
+- `((a -> b) -> ((c -> a) -> (c -> b)))`: 1
+- `((a -> b) -> (c -> (((a -> b) -> a) -> b)))`: 1
+- `((a -> b) -> (c -> ((c -> a) -> b)))`: 1
+- `((Bool -> Bool) -> (a -> (b -> Bool)))`: 1
+- `((Bool -> a) -> (Bool -> (b -> a)))`: 1
+- `((a -> b) -> ((Bool -> a) -> (c -> b)))`: 1
+- `((Bool -> a) -> (b -> (Bool -> a)))`: 1
+- `((a -> b) -> (c -> ((Bool -> a) -> b)))`: 1
+- `(((a -> a) -> b) -> (c -> (d -> b)))`: 1
+- `(((a -> Bool) -> b) -> (c -> (d -> b)))`: 1
+- `(a -> ((a -> (a -> b)) -> (c -> b)))`: 1
+- `(a -> ((b -> (a -> c)) -> (b -> c)))`: 1
+- `(a -> (b -> ((a -> (a -> c)) -> c)))`: 1
+- `(a -> (b -> ((b -> (a -> c)) -> c)))`: 1
+- `(a -> ((Bool -> (a -> b)) -> (c -> b)))`: 1
+- `(a -> (b -> ((Bool -> (a -> c)) -> c)))`: 1
+- `(a -> (b -> (c -> a)))`: 1
+- `((a -> (a -> b)) -> (a -> (c -> b)))`: 1
+- `((a -> (b -> c)) -> (b -> (a -> c)))`: 1
+- `(a -> (b -> ((a -> (b -> c)) -> c)))`: 1
+- `((Bool -> (a -> b)) -> (a -> (c -> b)))`: 1
+- `((a -> (b -> c)) -> (a -> (b -> c)))`: 1
+- `((a -> (a -> b)) -> (c -> (a -> b)))`: 1
+- `(a -> ((a -> (b -> c)) -> (b -> c)))`: 1
+- `((Bool -> (a -> b)) -> (c -> (a -> b)))`: 1
+- `(((a -> b) -> a) -> ((a -> b) -> (c -> b)))`: 1
+- `((a -> b) -> ((b -> c) -> (a -> c)))`: 1
+- `(a -> ((b -> a) -> (c -> a)))`: 1
+- `(a -> ((b -> c) -> ((a -> b) -> c)))`: 1
+- `(Bool -> ((Bool -> a) -> (b -> a)))`: 1
+- `((Bool -> a) -> ((a -> b) -> (c -> b)))`: 1
+- `((a -> b) -> (a -> ((b -> c) -> c)))`: 1
+- `(((a -> b) -> a) -> (c -> ((a -> b) -> b)))`: 1
+- `(a -> ((a -> b) -> ((b -> c) -> c)))`: 1
+- `(a -> (b -> ((c -> a) -> a)))`: 1
+- `(Bool -> (a -> ((Bool -> b) -> b)))`: 1
+- `((Bool -> a) -> (b -> ((a -> c) -> c)))`: 1
+- `((a -> ((b -> Bool) -> c)) -> (a -> c))`: 1
+- `(a -> ((a -> ((b -> Bool) -> c)) -> c))`: 1
+- `((Bool -> ((a -> Bool) -> b)) -> (c -> b))`: 1
+- `(((a -> b) -> c) -> ((a -> c) -> c))`: 1
+- `(((a -> b) -> c) -> ((((a -> b) -> c) -> b) -> c))`: 1
+- `(((a -> b) -> c) -> ((a -> b) -> c))`: 1
+- `((((a -> b) -> b) -> c) -> (a -> c))`: 1
+- `(((a -> Bool) -> b) -> (Bool -> b))`: 1
+- `(((a -> b) -> c) -> ((Bool -> b) -> c))`: 1
+- `(((Bool -> Bool) -> a) -> (b -> a))`: 1
+- `((((Bool -> a) -> a) -> b) -> (c -> b))`: 1
+- `(((a -> (b -> b)) -> c) -> (d -> c))`: 1
+- `(((a -> (b -> Bool)) -> c) -> (d -> c))`: 1
+- `((a -> ((b -> b) -> c)) -> (a -> c))`: 1
+- `(a -> ((a -> ((b -> b) -> c)) -> c))`: 1
+- `((Bool -> ((a -> a) -> b)) -> (c -> b))`: 1
+- `((((a -> b) -> c) -> b) -> (((a -> b) -> c) -> c))`: 1
+- `((a -> b) -> (((a -> b) -> c) -> c))`: 1
+- `((a -> b) -> (((a -> c) -> b) -> b))`: 1
+- `(a -> ((((a -> b) -> b) -> c) -> c))`: 1
+- `(Bool -> (((a -> Bool) -> b) -> b))`: 1
+- `((Bool -> a) -> (((b -> a) -> c) -> c))`: 1
+- `(((a -> a) -> b) -> Bool)`: 1
+- `(((a -> Bool) -> b) -> Bool)`: 1
+- `((((a -> b) -> (a -> b)) -> c) -> c)`: 1
+- `(((a -> ((a -> b) -> b)) -> c) -> c)`: 1
+- `(((Bool -> (a -> Bool)) -> b) -> b)`: 1
+- `((((Bool -> a) -> (b -> a)) -> c) -> c)`: 1
+- `(((a -> (Bool -> Bool)) -> b) -> b)`: 1
+- `(((a -> ((Bool -> b) -> b)) -> c) -> c)`: 1
+- `(((a -> (b -> (c -> c))) -> d) -> d)`: 1
+- `(((a -> (b -> (c -> Bool))) -> d) -> d)`: 1
+- `((Int -> Int) -> Int)`: 1
+- `((a -> Int) -> a)`: 1
+- `((a -> b) -> c)`: 1
+- `((a -> b) -> b)`: 1
+- `((Bool -> ((Bool -> (a -> b)) -> c)) -> c)`: 1
+- `(((a -> b) -> (a -> b)) -> c)`: 1
+
+### Error classes (ill-typed)
+
+- `error:application-mismatch`: 910
+- `error:occurs-check`: 877
+- `error:non-bool-condition`: 707
+- `error:heterogeneous-if`: 478
+
+## Discriminating mutations (boundary findings)
+
+Each row is a single growth step where adding one subcomponent flipped the validated outcome. These are the combinator-style probes: minimal structural deltas that change what the type checker decides.
+
+- type-change: 1673
+- well->ill: 1215
+- ill->well: 207
+
+### Sample boundary cases
+
+- **ill->well**
+  - parent `(\x. (x x))` : `error:occurs-check`
+  - child  `(\x. ((\y. y) x))` : `(a -> a)`
+- **ill->well**
+  - parent `(\x. (x x))` : `error:occurs-check`
+  - child  `(\x. ((\y. True) x))` : `(a -> Bool)`
+- **ill->well**
+  - parent `(\x. (\y. (x x)))` : `error:occurs-check`
+  - child  `(\x. (\y. ((y x) x)))` : `(a -> ((a -> (a -> b)) -> b))`
+- **ill->well**
+  - parent `(\x. (\y. (x x)))` : `error:occurs-check`
+  - child  `(\x. (\y. ((y True) x)))` : `(a -> ((Bool -> (a -> b)) -> b))`
+- **type-change**
+  - parent `True` : `Bool`
+  - child  `(\x. True)` : `(a -> Bool)`
+- **type-change**
+  - parent `False` : `Bool`
+  - child  `(\x. False)` : `(a -> Bool)`
+- **type-change**
+  - parent `0` : `Int`
+  - child  `(\x. 0)` : `(a -> Int)`
+- **type-change**
+  - parent `0` : `Int`
+  - child  `(let x = 0 in True)` : `Bool`
+- **well->ill**
+  - parent `(\x. x)` : `(a -> a)`
+  - child  `(\x. (x x))` : `error:occurs-check`
+- **well->ill**
+  - parent `(\x. (\x. x))` : `(a -> (b -> b))`
+  - child  `(\x. (\x. (x x)))` : `error:occurs-check`
+- **well->ill**
+  - parent `(\x. (\y. True))` : `(a -> (b -> Bool))`
+  - child  `(\x. (\y. (x x)))` : `error:occurs-check`
+- **well->ill**
+  - parent `(\x. (\y. True))` : `(a -> (b -> Bool))`
+  - child  `(\x. (\y. (y y)))` : `error:occurs-check`
