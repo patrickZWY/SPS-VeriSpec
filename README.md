@@ -659,7 +659,9 @@ Priority future work:
   ill-typed composites can only be decided by the oracle/tests -- the quantified
   argument for progressive validation. The discriminating mutations are promoted
   into a strict-equality pytest suite by `generate_flip_tests.py` (written to
-  `generated_tests/type_checker_case_study/`) and run through the repo-wide
+  `generated_tests/type_checker_case_study/`): a one-step boundary suite plus a
+  deeper composition-chain suite that records four-expression progressions such
+  as `well -> ill -> well -> richer-type`. They run through the repo-wide
   evaluation lane: `tools/validate_generated_tests.py` produces the
   `validation_report.md`, and `type_checker_case_study/mutation_drive.py` reuses
   the `tools/mutation_eval.py` report machinery with checker-logic mutation

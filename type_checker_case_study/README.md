@@ -65,9 +65,10 @@ elementary forms ──grow/mutate──▶ composite expressions
 .venv/bin/python -m type_checker_case_study.policy_eval
 #   -> out/policy_report.md
 
-# 4. Promote the discriminating mutations into a strict-oracle pytest suite.
+# 4. Promote the discriminating mutations into strict-oracle pytest suites.
 .venv/bin/python -m type_checker_case_study.generate_flip_tests
 #   -> generated_tests/type_checker_case_study/test_generated_composition_boundaries.py
+#   -> generated_tests/type_checker_case_study/test_generated_composition_chains.py
 pytest generated_tests/type_checker_case_study
 
 # 5. Repo-wide evaluation lane: validate the generated suite and mutation-test it.
@@ -110,13 +111,21 @@ or branch agreement, not on syntax alone.
 
 ## Generated suite
 
-`generate_flip_tests.py` promotes the discriminating mutations into
-`generated_tests/type_checker_case_study/test_generated_composition_boundaries.py`,
-mirroring the repo's `generate_pytest_from_properties` lane. Each case pins a
-parent expression, the mutated child, and both validated outcomes, asserting
-them with **strict equality** on the normalized outcome label (a stronger oracle
-than the dataclass lane's `_assert_observed`). The default run emits up to 25
-cases per flip kind (75 total).
+`generate_flip_tests.py` now emits two generated suites, mirroring the repo's
+`generate_pytest_from_properties` lane while keeping a strict oracle:
+
+- `generated_tests/type_checker_case_study/test_generated_composition_boundaries.py`
+  keeps the one-step discriminating mutations. Each case pins a parent
+  expression, the mutated child, and both validated outcomes with **strict
+  equality** on the normalized outcome label.
+- `generated_tests/type_checker_case_study/test_generated_composition_chains.py`
+  keeps deeper four-expression paths `expr0 -> expr1 -> expr2 -> expr3`, so the
+  suite can assert "do this, then one more time, then again" progressions
+  instead of only isolated flips.
+
+The default run currently emits up to 25 boundary cases per flip kind (75
+total) plus up to 5 chain cases per chain kind (20 total with the current
+search budget).
 
 ## Evaluation lane
 

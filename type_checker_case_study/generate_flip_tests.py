@@ -1,4 +1,4 @@
-"""Promote discriminating mutations into a generated pytest suite.
+"""Promote discriminating mutations into generated pytest suites.
 
 Mirrors the repo's ``tools/generate_pytest_from_properties.py`` lane: select
 validated cases, embed them as a literal in a generated test module, and let
@@ -12,22 +12,36 @@ here is strict equality on the normalized outcome label (a principal-type shape
 like ``(a -> a)`` or an error class like ``error:occurs-check``). That gives the
 generated suite a strong oracle, which the repo README explicitly asks for.
 
-The suite is regenerated deterministically from the same pipeline that writes
-``out/flips.csv``; the CSV is the human-readable artifact, this is the
-executable one.
+The suites are regenerated deterministically from the same pipeline that writes
+``out/flips.csv``; the CSV is the human-readable artifact, these are the
+executable ones.
 """
 
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 
-from .compose import grow, size
+from .compose import Expr, MutationEdge, grow, size
 from .groundtruth import Flip, build_ground_truth
-from .oracle.syntax import App, EFalse, ETrue, Expr, If, Lam, Let, Lit, Var
+from .oracle.syntax import App, EFalse, ETrue, If, Lam, Let, Lit, Var
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = ROOT / "generated_tests" / "type_checker_case_study"
+
+
+@dataclass(frozen=True)
+class ChainCase:
+    """A multi-step path through the mutation graph with changing outcomes."""
+
+    kind: str
+    expressions: tuple[Expr, ...]
+    outcomes: tuple[str, ...]
+
+
+CHAIN_TEST_PATH = "test_generated_composition_chains.py"
+BOUNDARY_TEST_PATH = "test_generated_composition_boundaries.py"
 
 
 def to_source(expr: Expr) -> str:
@@ -81,6 +95,94 @@ def select_flips(flips: list[Flip], per_kind: int) -> list[Flip]:
     return selected
 
 
+def _edge_index(edges: list[MutationEdge]) -> dict[Expr, list[MutationEdge]]:
+    by_parent: dict[Expr, list[MutationEdge]] = {}
+    for edge in edges:
+        by_parent.setdefault(edge.parent, []).append(edge)
+    for children in by_parent.values():
+        children.sort(
+            key=lambda edge: (
+                size(edge.parent) + size(edge.child),
+                to_source(edge.parent),
+                to_source(edge.child),
+            )
+        )
+    return by_parent
+
+
+def _chain_kind(outcomes: tuple[str, ...]) -> str:
+    err_flags = tuple(label.startswith("error:") for label in outcomes)
+    if all(not flag for flag in err_flags):
+        return "type-ladder"
+    if all(flag for flag in err_flags):
+        return "error-ladder"
+    if not err_flags[0] and err_flags[-1]:
+        return "well->ill-chain"
+    if err_flags[0] and not err_flags[-1]:
+        return "ill->well-chain"
+    return "mixed-chain"
+
+
+def _is_redundant_chain(outcomes: tuple[str, ...]) -> bool:
+    # Keep only paths that show a genuine progression rather than repeating
+    # the same outcome label along the way.
+    return len(set(outcomes)) != len(outcomes)
+
+
+def select_chains(
+    edges: list[MutationEdge],
+    outcomes: dict[Expr, object],
+    *,
+    steps: int = 4,
+    per_kind: int = 5,
+) -> list[ChainCase]:
+    """Select deterministic multi-hop paths with distinct outcomes.
+
+    ``steps`` counts expressions, so the default picks four-level cases
+    ``expr0 -> expr1 -> expr2 -> expr3``. We rank by total size and source text
+    so minimal, readable chains win.
+    """
+    if steps < 2:
+        raise ValueError("steps must be at least 2")
+
+    by_parent = _edge_index(edges)
+    chains: list[ChainCase] = []
+
+    def visit(path: tuple[Expr, ...]) -> None:
+        if len(path) == steps:
+            labels = tuple(outcomes[expr].label for expr in path)
+            if not _is_redundant_chain(labels):
+                chains.append(ChainCase(_chain_kind(labels), path, labels))
+            return
+        parent = path[-1]
+        for edge in by_parent.get(parent, []):
+            child = edge.child
+            if child in path:
+                continue
+            visit(path + (child,))
+
+    roots = sorted(by_parent, key=lambda expr: (size(expr), to_source(expr)))
+    for root in roots:
+        visit((root,))
+
+    by_kind: dict[str, list[ChainCase]] = {}
+    for chain in chains:
+        by_kind.setdefault(chain.kind, []).append(chain)
+
+    selected: list[ChainCase] = []
+    for kind in sorted(by_kind):
+        ranked = sorted(
+            by_kind[kind],
+            key=lambda chain: (
+                sum(size(expr) for expr in chain.expressions),
+                tuple(to_source(expr) for expr in chain.expressions),
+                chain.outcomes,
+            ),
+        )
+        selected.extend(ranked[:per_kind])
+    return selected
+
+
 def render_cases(flips: list[Flip]) -> str:
     entries = []
     seen_ids: set[str] = set()
@@ -110,6 +212,37 @@ def render_cases(flips: list[Flip]) -> str:
     return "[\n" + ",\n".join(entries) + "\n]"
 
 
+def render_chain_cases(chains: list[ChainCase]) -> str:
+    entries = []
+    seen_ids: set[str] = set()
+    for chain in chains:
+        case_id = safe_id(
+            chain.kind,
+            *(to_source(expr) for expr in chain.expressions),
+        )
+        base = case_id
+        n = 1
+        while case_id in seen_ids:
+            n += 1
+            case_id = f"{base}-{n}"
+        seen_ids.add(case_id)
+        expr_list = ", ".join(to_source(expr) for expr in chain.expressions)
+        label_list = ", ".join(repr(label) for label in chain.outcomes)
+        entries.append(
+            "\n".join(
+                [
+                    "    {",
+                    f"        'id': {case_id!r},",
+                    f"        'kind': {chain.kind!r},",
+                    f"        'expressions': [{expr_list}],",
+                    f"        'outcomes': [{label_list}],",
+                    "    }",
+                ]
+            )
+        )
+    return "[\n" + ",\n".join(entries) + "\n]"
+
+
 def render_test_file(flips: list[Flip]) -> str:
     return f'''"""
 Generated by type_checker_case_study/generate_flip_tests.py.
@@ -121,7 +254,7 @@ between distinct principal types) as regression tests.
 
 Run from the repo root:
 
-    pytest generated_tests/type_checker_case_study
+    pytest generated_tests/type_checker_case_study/{BOUNDARY_TEST_PATH}
 """
 
 from __future__ import annotations
@@ -173,6 +306,55 @@ def test_composition_boundary(case):
 '''
 
 
+def render_chain_test_file(chains: list[ChainCase]) -> str:
+    return f'''"""
+Generated by type_checker_case_study/generate_flip_tests.py.
+
+Each case is a multi-step composition chain discovered by the progressive
+mutation graph. These preserve the intermediate validated outcomes, so the
+tests can pin a deeper "do this, then one more time, then again" progression
+rather than only a single boundary flip.
+
+Run from the repo root:
+
+    pytest generated_tests/type_checker_case_study/{CHAIN_TEST_PATH}
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from type_checker_case_study.oracle.syntax import (
+    App,
+    EFalse,
+    ETrue,
+    If,
+    Lam,
+    Let,
+    Lit,
+    Var,
+)
+from type_checker_case_study.outcome import classify
+
+
+CASES = {render_chain_cases(chains)}
+
+
+def _outcome_label(expr):
+    return classify(expr).label
+
+
+@pytest.mark.parametrize("case", CASES, ids=[case["id"] for case in CASES])
+def test_composition_chain(case):
+    expressions = case["expressions"]
+    recorded = case["outcomes"]
+    observed = [_outcome_label(expr) for expr in expressions]
+    assert observed == recorded
+    assert len(observed) >= 4
+    assert len(set(observed)) == len(observed)
+'''
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--max-size", type=int, default=9)
@@ -183,6 +365,18 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=25,
         help="Maximum cases to emit per flip kind (well->ill, ill->well, type-change).",
+    )
+    parser.add_argument(
+        "--chain-steps",
+        type=int,
+        default=4,
+        help="Expressions per generated chain case; 4 means expr0 -> expr1 -> expr2 -> expr3.",
+    )
+    parser.add_argument(
+        "--chains-per-kind",
+        type=int,
+        default=5,
+        help="Maximum generated chain cases to emit per chain kind.",
     )
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT))
     return parser.parse_args()
@@ -197,13 +391,22 @@ def main() -> None:
     )
     gt = build_ground_truth(composition)
     flips = select_flips(gt.flips, args.per_kind)
+    chains = select_chains(
+        composition.edges,
+        gt.outcomes,
+        steps=args.chain_steps,
+        per_kind=args.chains_per_kind,
+    )
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    test_path = out_dir / "test_generated_composition_boundaries.py"
-    test_path.write_text(render_test_file(flips), encoding="utf-8")
+    boundary_path = out_dir / BOUNDARY_TEST_PATH
+    boundary_path.write_text(render_test_file(flips), encoding="utf-8")
+    chain_path = out_dir / CHAIN_TEST_PATH
+    chain_path.write_text(render_chain_test_file(chains), encoding="utf-8")
 
-    print(f"emitted {len(flips)} boundary cases -> {test_path}")
+    print(f"emitted {len(flips)} boundary cases -> {boundary_path}")
+    print(f"emitted {len(chains)} chain cases -> {chain_path}")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from type_checker_case_study.compose import (
+    MutationEdge,
     free_vars,
     grow,
     is_closed,
@@ -11,6 +12,7 @@ from type_checker_case_study.compose import (
     replace_at,
     size,
 )
+from type_checker_case_study.generate_flip_tests import select_chains
 from type_checker_case_study.facts import resolve_expr
 from type_checker_case_study.oracle.syntax import App, ETrue, If, Lam, Let, Lit, Var
 from type_checker_case_study.outcome import classify
@@ -84,3 +86,53 @@ def test_grow_is_deterministic_and_finds_known_cases():
     assert [str(e) for e in a.expressions] == [str(e) for e in b.expressions]
     # the identity and a self-application should both be reachable
     assert Lam("x", Var("x")) in set(a.expressions)
+
+
+def test_select_chains_finds_four_level_progressions():
+    e0 = Lam("x", Var("x"))
+    e1 = Lam("x", App(Var("x"), ETrue()))
+    e2 = Lam("x", App(Var("x"), Var("x")))
+    e3 = Lam("x", App(Lam("y", ETrue()), Var("x")))
+    outcomes = {expr: classify(expr) for expr in (e0, e1, e2, e3)}
+    chains = select_chains(
+        [
+            MutationEdge(e0, e1, 1),
+            MutationEdge(e1, e2, 2),
+            MutationEdge(e2, e3, 3),
+        ],
+        outcomes,
+        steps=4,
+        per_kind=5,
+    )
+
+    assert len(chains) == 1
+    chain = chains[0]
+    assert chain.kind == "mixed-chain"
+    assert chain.expressions == (e0, e1, e2, e3)
+    assert chain.outcomes == (
+        "(a -> a)",
+        "((Bool -> a) -> a)",
+        "error:occurs-check",
+        "(a -> Bool)",
+    )
+
+
+def test_select_chains_drops_redundant_repeated_outcomes():
+    e0 = ETrue()
+    e1 = Let("x", ETrue(), ETrue())
+    e2 = Let("x", ETrue(), Let("y", ETrue(), ETrue()))
+    e3 = Lam("x", Let("x", ETrue(), Let("y", ETrue(), ETrue())))
+    outcomes = {expr: classify(expr) for expr in (e0, e1, e2, e3)}
+
+    chains = select_chains(
+        [
+            MutationEdge(e0, e1, 1),
+            MutationEdge(e1, e2, 2),
+            MutationEdge(e2, e3, 3),
+        ],
+        outcomes,
+        steps=4,
+        per_kind=5,
+    )
+
+    assert chains == []

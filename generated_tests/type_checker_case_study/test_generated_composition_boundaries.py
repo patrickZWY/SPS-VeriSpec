@@ -8,7 +8,7 @@ between distinct principal types) as regression tests.
 
 Run from the repo root:
 
-    pytest generated_tests/type_checker_case_study
+    pytest generated_tests/type_checker_case_study/test_generated_composition_boundaries.py
 """
 
 from __future__ import annotations
