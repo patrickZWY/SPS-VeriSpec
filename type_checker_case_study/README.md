@@ -48,6 +48,9 @@ elementary forms ──grow/mutate──▶ composite expressions
 | `groundtruth.py` | Validate all composites; write the ground-truth summary. |
 | `generate_flip_tests.py` | Promote discriminating mutations into a strict-oracle pytest suite. |
 | `mutation_drive.py` | Mutate the checker logic; score how well the suites kill the mutants. |
+| `metamorphic.py` | Phase-1 metamorphic transforms + relation checkers. |
+| `metamorphic_eval.py` | Run metamorphic relations over the corpus; report violations. |
+| `generate_metamorphic_tests.py` | Emit the metamorphic pytest suite (xfail the known bug). |
 | `tests/` | Parity suite (vs `TypeTest.hs`) + engine tests. |
 | `out/` | Generated reports and CSV catalogs. |
 
@@ -77,7 +80,16 @@ pytest generated_tests/type_checker_case_study
 #   -> generated_tests/type_checker_case_study/validation_report.md
 .venv/bin/python -m type_checker_case_study.mutation_drive
 #   -> generated_tests/type_checker_case_study/mutation_eval.md (+ .json)
+
+# 6. Metamorphic oracles (reference-free): run relations over the corpus, emit a suite.
+.venv/bin/python -m type_checker_case_study.metamorphic_eval
+#   -> out/metamorphic_report.md   (currently 44 MR-DEADLET violations = a real bug)
+.venv/bin/python -m type_checker_case_study.generate_metamorphic_tests
+#   -> generated_tests/type_checker_case_study/test_generated_metamorphic.py
 ```
+
+See [metamorphic-oracle-plan.md](metamorphic-oracle-plan.md) for the full plan
+and [METAMORPHIC_FINDINGS.md](METAMORPHIC_FINDINGS.md) for the bug Phase 1 found.
 
 Search budget is configurable: `--max-size`, `--max-rounds`, `--cap-per-round`.
 
@@ -142,8 +154,28 @@ The suite participates in the repo-wide evaluation lane:
   current run the boundary suite **kills all five mutants on its own**, evidence
   that the strict-equality oracle is meaningful and not vacuous.
 
+## Metamorphic oracles (Phase 1)
+
+The label-based suites above pin behavior the oracle itself defined, so they
+cannot catch a bug in the oracle. Metamorphic relations check a property
+*between* a source expression and a transform of it, with no recorded answer, so
+a violation indicts the checker even though the checker produced the corpus.
+
+Phase 1 relations: MR-LIT (literal interchange), MR-ALPHA (bound-variable
+renaming), MR-DEADLET (unused `let` wrap), MR-LAM (lambda wrap → `fresh -> T`),
+MR-ERRPROP (a closed ill-typed subterm keeps any enclosing term ill-typed). Over
+the size-9 corpus (~58k applications) every relation holds **except MR-DEADLET**,
+which surfaced a real soundness bug in the subject checker — confirmed against
+the original Haskell. See [METAMORPHIC_FINDINGS.md](METAMORPHIC_FINDINGS.md).
+
+This is the README's original goal realized: composing simpler expressions
+exposed a type-checker bug the 42 hand-written tests missed, found reference-free.
+
 ## Next steps
 
+- Metamorphic Phase 2/3: ground-substitution and eta (with side conditions),
+  then the `is_instance_of` subsumption check + MR-LETLAM (the `Lam`-vs-`Let`
+  generality relation). Wire the metamorphic suite into `mutation_drive`.
 - Richer policy predictors (non-bool condition where the condition is a literal
   `Lam`; heterogeneous-if where both branches have incompatible ground shapes)
   and re-measure soundness/coverage.

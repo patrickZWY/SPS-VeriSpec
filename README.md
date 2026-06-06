@@ -644,30 +644,59 @@ Implemented:
 - Validation handling for quarantined LLM oracle tests so failures are recorded
   as review records rather than trusted generated-suite failures.
 
-Priority future work:
+Type checker case study (implemented in `type_checker_case_study/`):
 
-- Type checker case study (first implementation in `type_checker_case_study/`).
-  The Hindley-Milner checker in `../cs4820/type-checker` is ported to Python as
-  a trusted oracle (parity-tested against its combinator suite). A scope-aware
-  loop progressively composes the eight elementary expression forms and
-  *validates each composite against the oracle* rather than proving outcomes
-  conservatively. A Souffle policy (`policy/expr_policy.dl`) predicts outcomes
-  structurally; `policy_eval.py` measures it against the validated ground truth.
-  First findings: the policy is sound for the ill-typed/well-typed decision
-  (zero false positives) because it keys on the `Lam`-vs-`Let` binder
-  distinction, but error *class* is a whole-composition property, and ~2,100
-  ill-typed composites can only be decided by the oracle/tests -- the quantified
-  argument for progressive validation. The discriminating mutations are promoted
-  into a strict-equality pytest suite by `generate_flip_tests.py` (written to
-  `generated_tests/type_checker_case_study/`): a one-step boundary suite plus a
-  deeper composition-chain suite that records four-expression progressions such
-  as `well -> ill -> well -> richer-type`. They run through the repo-wide
-  evaluation lane: `tools/validate_generated_tests.py` produces the
-  `validation_report.md`, and `type_checker_case_study/mutation_drive.py` reuses
-  the `tools/mutation_eval.py` report machinery with checker-logic mutation
-  operators -- the boundary suite kills all current mutants on its own.
-  Remaining: richer policy predictors, principal-type-shape prediction (not just
-  error classes), and equivalent-mutant probes.
+The original milestone was to compose advanced expressions from simpler ones to
+expose type-checker errors -- investigate by hand what parts of an expression
+matter, make it a policy, and deduce more complex tests similar to the one that
+exposed a real bug. This case study does that, and it already found a real bug.
+
+- **Headline finding.** A metamorphic relation -- "wrapping an expression in an
+  unused `let` binding must not change its type" (MR-DEADLET) -- exposed a
+  soundness bug in the subject checker. `\x.\y. x (x y)` infers the unsound
+  `(a -> b) -> (b -> b)` when its principal type is `(a -> a) -> (a -> a)` (the
+  `x (x y)` shape forces the domain and codomain of `x` to be equal). A dead
+  `let` reports the correct type because `inferLet` re-applies the full
+  substitution to the result while `inferLam` leaves a non-idempotent one. The
+  bug was **confirmed against the original Haskell** (`runghc`), so it is in the
+  subject, not the port, and the 42 hand-written tests missed it. Not fixed --
+  the oracle is a faithful port and the bug is the finding; it is pinned by a
+  strict-xfail regression that flips to a failure when the checker is corrected.
+  See `type_checker_case_study/METAMORPHIC_FINDINGS.md`.
+
+- **Oracle.** The Hindley-Milner checker in `../cs4820/type-checker` is ported to
+  Python (`oracle/`) and parity-tested against its combinator suite (42 cases).
+
+- **Progressive composition.** A scope-aware loop (`compose.py`) grows the eight
+  elementary expression forms one subcomponent at a time and *validates each
+  composite against the oracle* rather than proving outcomes conservatively.
+  `groundtruth.py` writes the validated catalog (~5,600 expressions, ~3,000
+  outcome-flipping minimal pairs).
+
+- **Datalog policy.** A Souffle model (`policy/expr_policy.dl`) predicts outcomes
+  structurally; `policy_eval.py` measures it against the ground truth. It is
+  sound for the ill-typed/well-typed decision (zero false positives) by keying on
+  the `Lam`-vs-`Let` binder distinction, but error *class* is a whole-composition
+  property and ~2,100 ill-typed composites can only be decided by the oracle --
+  the quantified argument for progressive validation.
+
+- **Generated suites.** `generate_flip_tests.py` promotes the discriminating
+  mutations into strict-equality pytest (a one-step boundary suite plus a deeper
+  composition-chain suite recording four-expression progressions such as
+  `well -> ill -> well -> richer-type`). `generate_metamorphic_tests.py` emits a
+  reference-free metamorphic suite, with the bug cases as documented strict-xfail.
+
+- **Evaluation lane.** `tools/validate_generated_tests.py` produces
+  `validation_report.md`; `mutation_drive.py` reuses the `tools/mutation_eval.py`
+  report machinery with checker-logic mutation operators -- the boundary suite
+  kills all current mutants on its own. `metamorphic_eval.py` runs the relations
+  over the corpus (~58k applications) and reports violations.
+
+- **Remaining.** Metamorphic Phase 2/3 (ground-substitution and eta with side
+  conditions; an `is_instance_of` subsumption check + the `Lam`-vs-`Let`
+  generality relation MR-LETLAM); wiring the metamorphic suite into
+  `mutation_drive`; richer policy predictors; principal-type-shape prediction;
+  equivalent-mutant probes. Plan: `type_checker_case_study/metamorphic-oracle-plan.md`.
 
 Still future work:
 
