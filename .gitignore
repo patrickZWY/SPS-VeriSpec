@@ -3,6 +3,12 @@ __pycache__/
 .pytest_cache/
 .venv/
 
+motivation.md
+
+CutePetsBoston/
+dacite/
+transformers/
+
 # Type-checker case study: transient Souffle work + large generated catalogs.
 type_checker_case_study/out/policy_work/
 type_checker_case_study/out/*.csv
