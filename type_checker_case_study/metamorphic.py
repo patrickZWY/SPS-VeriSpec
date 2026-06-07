@@ -11,6 +11,9 @@ Phase 1 ships the relations that are sound with no new inference machinery:
   * MR-LIT     -- interchange Int/Bool literals               -> equal outcome
   * MR-ALPHA   -- rename a bound variable to a fresh name      -> equal outcome
   * MR-DEADLET -- wrap in an unused, well-typed let binding    -> equal outcome
+                  (EMI-style dead code after Le, Afshari, and Su,
+                  "Compiler Validation via Equivalence Modulo Inputs",
+                  PLDI 2014, doi:10.1145/2594291.2594334)
   * MR-LAM     -- wrap in a lambda over a fresh unused param   -> `fresh -> T`
   * MR-ERRPROP -- embed a closed ill-typed term in a context   -> error stays
 
@@ -206,6 +209,7 @@ def _alpha_instances(source: Expr, _outcome: Outcome) -> Iterator[MRInstance]:
 
 
 def _deadlet_instances(source: Expr, _outcome: Outcome) -> Iterator[MRInstance]:
+    # EMI-style dead-code wrapper; citation in module docstring.
     z = fresh_name(source)
     yield MRInstance(MR_DEADLET, REL_EQUAL, source, Let(z, ETrue(), source))
 

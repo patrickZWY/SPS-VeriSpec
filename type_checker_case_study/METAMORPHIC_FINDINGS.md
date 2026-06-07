@@ -2,9 +2,10 @@
 
 ## Finding 1 — soundness bug in `inferLam` (substitution not idempotent)
 
-**Discovered by:** MR-DEADLET (wrapping an expression in an unused `let` binding
-must not change its type), Phase 1. 44 violations across the size-9 corpus, all
-this one bug class.
+**Discovered by:** MR-DEADLET (wrapping an expression in an unused `let`
+binding must not change its type; an EMI-style dead-code relation after Le,
+Afshari, and Su, PLDI 2014, doi:10.1145/2594291.2594334), Phase 1. 44
+violations across the size-9 corpus, all this one bug class.
 
 **Confirmed against the original Haskell** (`cs4820/type-checker`), so this is a
 bug in the subject checker, not the Python port:
@@ -53,8 +54,9 @@ relations is what made the bug observable.
 
 Both make `inferLam` agree with `inferLet`.
 
-**Also caught by MR-KPROJ.** The EMI-style K-projection relation (`K e junk` has
-the same type as `e`) independently flags the same 44 expressions: the K
+**Also caught by MR-KPROJ.** The EMI-style K-projection relation (`K e junk`
+has the same type as `e`; Le, Afshari, and Su, PLDI 2014,
+doi:10.1145/2594291.2594334) independently flags the same 44 expressions: the K
 application re-applies the full substitution to its result, just as `inferLet`
 does. Two independent relations agreeing on the same 44 cases is corroboration.
 

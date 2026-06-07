@@ -162,18 +162,24 @@ cannot catch a bug in the oracle. Metamorphic relations check a property
 a violation indicts the checker even though the checker produced the corpus.
 
 Phase 1 relations: MR-LIT (literal interchange), MR-ALPHA (bound-variable
-renaming), MR-DEADLET (unused `let` wrap), MR-LAM (lambda wrap → `fresh -> T`),
-MR-ERRPROP (a closed ill-typed subterm keeps any enclosing term ill-typed).
+renaming), MR-DEADLET (unused `let` wrap; an EMI-style dead-code relation after
+Le, Afshari, and Su, PLDI 2014, doi:10.1145/2594291.2594334), MR-LAM (lambda
+wrap → `fresh -> T`), MR-ERRPROP (a closed ill-typed subterm keeps any
+enclosing term ill-typed).
 
 Phase 1.5 added three relations from a recent-literature scan
 ([metamorphic-related-work.md](metamorphic-related-work.md)):
 
-- **MR-CLASH** (Hephaestus type-overwriting): a closed term of one ground type
-  grafted into a slot pinned to a different ground type must be rejected. Sound,
-  zero violations — validates the rejection machinery.
-- **MR-KPROJ** (EMI dead context): `K e junk` must have the same type as `e`.
-- **MR-LETLAM** (Interrogation-Testing precision): app-form well-typed ⟹ let-form
-  well-typed and the app-form type is an instance of the let-form type.
+- **MR-CLASH** (Hephaestus type-overwriting; Chaliasos et al., PLDI 2022,
+  doi:10.1145/3519939.3523427): a closed term of one ground type grafted into a
+  slot pinned to a different ground type must be rejected. Sound, zero
+  violations — validates the rejection machinery.
+- **MR-KPROJ** (EMI dead context; Le, Afshari, and Su, PLDI 2014,
+  doi:10.1145/2594291.2594334): `K e junk` must have the same type as `e`.
+- **MR-LETLAM** (Interrogation-Testing precision; Kaindlstorfer, Isychev,
+  Wuestholz, and Christakis, ASE 2024, doi:10.1145/3691620.3695034): app-form
+  well-typed ⟹ let-form well-typed and the app-form type is an instance of the
+  let-form type.
 
 Over the size-9 corpus (~67k applications) three relations found **real,
 Haskell-confirmed bugs**: MR-DEADLET and MR-KPROJ the wrong-type substitution bug
