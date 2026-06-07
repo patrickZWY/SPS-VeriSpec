@@ -59,9 +59,13 @@ def evaluate(
         src_outcome = cached(source)
         for inst in instances_for(source, src_outcome):
             applications[inst.mr] += 1
+            # The relation is between the instance's own two expressions; most
+            # MRs use the corpus source as inst.source, but some (e.g. MR-LETLAM)
+            # do not, so classify inst.source rather than reusing src_outcome.
+            inst_src_outcome = cached(inst.source)
             dst_outcome = cached(inst.transformed)
-            if not relation_holds(inst.relation, src_outcome, dst_outcome):
-                violations.append(Violation(inst, src_outcome, dst_outcome))
+            if not relation_holds(inst.relation, inst_src_outcome, dst_outcome):
+                violations.append(Violation(inst, inst_src_outcome, dst_outcome))
 
     return MetamorphicResult(
         applications=applications,
@@ -77,8 +81,9 @@ def render_report(result: MetamorphicResult) -> str:
         "",
         "Each source expression from the composition corpus is transformed by "
         "every applicable metamorphic relation, and the relation is checked "
-        "against the oracle. Zero violations is the expected, meaningful result: "
-        "an independent cross-check that the relations and the port agree.",
+        "against the oracle. Violations are documented findings (real checker "
+        "bugs); see METAMORPHIC_FINDINGS.md. MR-CLASH is a pure soundness check "
+        "and is expected to stay at zero.",
         "",
         "## Coverage",
         "",

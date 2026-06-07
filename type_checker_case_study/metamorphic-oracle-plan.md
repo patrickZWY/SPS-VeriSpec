@@ -1,5 +1,12 @@
 # Plan: metamorphic oracles for the type-checker case study
 
+> **Status.** Phase 1 shipped (MR-LIT/ALPHA/DEADLET/LAM/ERRPROP). A Phase-1.5
+> batch from the related-work scan (`metamorphic-related-work.md`) added
+> MR-CLASH, MR-KPROJ, and MR-LETLAM -- all sound and in the pipeline. MR-LETLAM
+> realizes the precision idea below (it uses the `is_instance_of` check) and
+> found Finding 2. Remaining Phase 2/3 items: ground-substitution and eta
+> preserve-relations, and wiring the metamorphic suite into `mutation_drive`.
+
 ## Why
 
 The generated boundary suite (`test_generated_composition_boundaries.py`) asserts

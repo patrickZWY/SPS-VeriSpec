@@ -270,7 +270,6 @@ def render_quarantined_oracle_tests(proposals: list[OracleProposal]) -> str:
         "import pytest",
         "",
         "pytestmark = [",
-        "    pytest.mark.llm_oracle_candidate,",
         "    pytest.mark.xfail(reason=\"quarantined LLM oracle candidate\", strict=False),",
         "]",
         "",

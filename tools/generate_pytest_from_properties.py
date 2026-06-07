@@ -49,6 +49,7 @@ class TransformTarget:
 @dataclass(frozen=True)
 class ExecutableCase:
     id: str
+    variant: str
     class_module: str
     class_name: str
     method_name: str
@@ -480,6 +481,8 @@ def sample_value(field: DataclassField, variant: str = "default") -> object:
 
     if variant == "none":
         return None
+    if variant == "false":
+        return False
     if variant == "empty":
         if "list" in type_repr:
             return []
@@ -514,6 +517,31 @@ def sample_value(field: DataclassField, variant: str = "default") -> object:
         return "/tmp/generated-value"
 
     return f"generated_{name}"
+
+
+def case_variants_for_field(
+    field: DataclassField,
+    target_kind: str,
+) -> list[tuple[str, object, str]]:
+    lowered = field.type_repr.lower()
+    if target_kind == "optional":
+        return [
+            ("none", None, "equals"),
+            ("empty", sample_value(field, "empty"), "equals"),
+            ("value", sample_value(field), "equals"),
+        ]
+
+    if "bool" in lowered:
+        return [
+            ("true", True, "equals"),
+            ("false", False, "equals"),
+        ]
+    if any(token in lowered for token in ("str", "list", "dict", "set", "tuple")):
+        return [
+            ("empty", sample_value(field, "empty"), "equals"),
+            ("value", sample_value(field), "observes"),
+        ]
+    return [("value", sample_value(field), "observes")]
 
 
 def make_input_kwargs(
@@ -710,15 +738,7 @@ def build_cases(
             )
             continue
 
-        values: list[tuple[str, object, str]]
-        if target.target_kind == "optional":
-            values = [
-                ("none", None, "equals"),
-                ("empty", "", "equals"),
-                ("value", sample_value(source_field), "equals"),
-            ]
-        else:
-            values = [("value", sample_value(source_field), "observes")]
+        values = case_variants_for_field(source_field, target.target_kind)
 
         for variant, value, assertion in values:
             if len(cases) >= max_cases:
@@ -734,6 +754,7 @@ def build_cases(
             cases.append(
                 ExecutableCase(
                     id=case_id,
+                    variant=variant,
                     class_module=target.class_module,
                     class_name=target.class_name,
                     method_name=method_name(target.qualified_name),
@@ -975,6 +996,7 @@ def render_cases(cases: list[ExecutableCase], import_prefix: str = "") -> str:
                 [
                     "    {",
                     f"        'id': {case.id!r},",
+                    f"        'variant': {case.variant!r},",
                     f"        'class_module': {prefixed_module_name(case.class_module, import_prefix)!r},",
                     f"        'class_name': {case.class_name!r},",
                     f"        'method_name': {case.method_name!r},",
@@ -1832,6 +1854,7 @@ from hypothesis import given, settings, strategies as st
 
 
 CASES = {render_cases(cases, import_prefix)}
+HYPOTHESIS_CASES = [case for case in CASES if case.get("variant") == "value"]
 
 
 def _load_class(module_name, class_name):
@@ -1902,6 +1925,12 @@ def _strategy_for_case(case):
     type_repr = case["source_type"].lower()
 
     if case["assertion"] == "equals" and case["target_kind"] == "optional":
+        if "list" in type_repr:
+            return st.one_of(
+                st.none(),
+                st.just([]),
+                st.lists(_safe_text(max_size=12), min_size=1, max_size=4),
+            )
         if "url" in name or "link" in name:
             return st.one_of(
                 st.none(),
@@ -1941,7 +1970,7 @@ def _run_case(case, source_value):
         _assert_observed(actual, source_value)
 
 
-@pytest.mark.parametrize("case", CASES, ids=[case["id"] for case in CASES])
+@pytest.mark.parametrize("case", HYPOTHESIS_CASES, ids=[case["id"] for case in HYPOTHESIS_CASES])
 def test_generated_dataclass_transform_property_hypothesis(case):
     @settings(max_examples=25, deadline=None)
     @given(source_value=_strategy_for_case(case))

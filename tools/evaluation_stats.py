@@ -39,6 +39,17 @@ class RelationStats:
     interprocedural_candidates: int
 
 
+@dataclass(frozen=True)
+class GeneratorCoverageFamily:
+    name: str
+    discovered: int
+    emitted: int
+    emitted_cases: int
+    strict_oracle: int
+    weak_oracle: int
+    coverage_percent: float
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Write an SPS-VeriSpec evaluation report with relation yield and coverage deltas."
@@ -228,6 +239,36 @@ def coverage_totals(
     )
 
 
+def generator_coverage(analysis_dir: Path, generated_tests: Path) -> list[GeneratorCoverageFamily]:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        report_path = Path(temp_dir) / "generator_coverage.md"
+        json_path = Path(temp_dir) / "generator_coverage.json"
+        command = [
+            sys.executable,
+            str(ROOT / "tools" / "generator_coverage.py"),
+            "--analysis-dir",
+            str(analysis_dir),
+            "--generated-tests",
+            str(generated_tests),
+            "--report",
+            str(report_path),
+            "--json-report",
+            str(json_path),
+        ]
+        subprocess.run(
+            command,
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        return [
+            GeneratorCoverageFamily(**family)
+            for family in payload.get("families", [])
+        ]
+
+
 def percent_delta(new: CoverageTotals, old: CoverageTotals) -> float:
     return new.percent - old.percent
 
@@ -314,26 +355,31 @@ def write_reports(
     combined: CoverageTotals,
     target_tests: list[str],
     generated_tests: str,
+    generator_families: list[GeneratorCoverageFamily],
 ) -> None:
+    family_by_name = {family.name: family for family in generator_families}
     relation_yield = (
         0.0
         if stats.transform_targets == 0
         else (stats.unique_transform_relations_tested / stats.transform_targets) * 100
     )
+    helper_family = family_by_name.get("helper_boundary")
+    common_ast_family = family_by_name.get("common_ast_collection_iteration")
+    interprocedural_family = family_by_name.get("interprocedural_observable_slice")
     helper_yield = (
         0.0
-        if stats.helper_boundary_candidates == 0
-        else (stats.helper_boundary_cases / stats.helper_boundary_candidates) * 100
+        if helper_family is None or helper_family.discovered == 0
+        else helper_family.coverage_percent
     )
     common_ast_yield = (
         0.0
-        if stats.common_ast_candidates == 0
-        else (stats.common_ast_cases / stats.common_ast_candidates) * 100
+        if common_ast_family is None or common_ast_family.discovered == 0
+        else common_ast_family.coverage_percent
     )
     interprocedural_yield = (
         0.0
-        if stats.interprocedural_candidates == 0
-        else (stats.interprocedural_cases / stats.interprocedural_candidates) * 100
+        if interprocedural_family is None or interprocedural_family.discovered == 0
+        else interprocedural_family.coverage_percent
     )
     coverage_chart = svg_bar_chart(
         "Line Coverage by Suite",
@@ -347,9 +393,21 @@ def write_reports(
         "Relation-to-Test Yield",
         [
             ("Transform relations", relation_yield, f"{stats.unique_transform_relations_tested}/{stats.transform_targets}"),
-            ("Helper boundaries", helper_yield, f"{stats.helper_boundary_cases}/{stats.helper_boundary_candidates}"),
-            ("Common AST", common_ast_yield, f"{stats.common_ast_cases}/{stats.common_ast_candidates}"),
-            ("Interproc", interprocedural_yield, f"{stats.interprocedural_cases}/{stats.interprocedural_candidates}"),
+            (
+                "Helper boundaries",
+                helper_yield,
+                f"{0 if helper_family is None else helper_family.emitted}/{0 if helper_family is None else helper_family.discovered}",
+            ),
+            (
+                "Common AST",
+                common_ast_yield,
+                f"{0 if common_ast_family is None else common_ast_family.emitted}/{0 if common_ast_family is None else common_ast_family.discovered}",
+            ),
+            (
+                "Interproc",
+                interprocedural_yield,
+                f"{0 if interprocedural_family is None else interprocedural_family.emitted}/{0 if interprocedural_family is None else interprocedural_family.discovered}",
+            ),
         ],
     )
     composition_chart = svg_stacked_bar(
@@ -362,6 +420,14 @@ def write_reports(
             ("Interproc", stats.interprocedural_cases, "#ea580c"),
         ],
     )
+    generator_family_lines = [
+        "| Family | Discovered | Emitted relations | Emitted cases | Coverage | Strict cases | Weak cases |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for family in generator_families:
+        generator_family_lines.append(
+            f"| `{family.name}` | {family.discovered} | {family.emitted} | {family.emitted_cases} | {family.coverage_percent:.1f}% | {family.strict_oracle} | {family.weak_oracle} |"
+        )
 
     lines = [
         "# SPS-VeriSpec Evaluation Stats",
@@ -388,11 +454,18 @@ def write_reports(
         f"- Deterministic example cases: {stats.example_cases}",
         f"- Hypothesis property cases: {stats.hypothesis_cases}",
         f"- Helper boundary candidates: {stats.helper_boundary_candidates}",
-        f"- Helper boundary cases: {stats.helper_boundary_cases} ({helper_yield:.1f}%)",
+        f"- Helper boundary relations tested: {0 if helper_family is None else helper_family.emitted} ({helper_yield:.1f}%)",
+        f"- Helper boundary cases: {stats.helper_boundary_cases}",
         f"- Common-AST candidates: {stats.common_ast_candidates}",
-        f"- Common-AST cases: {stats.common_ast_cases} ({common_ast_yield:.1f}%)",
+        f"- Common-AST relations tested: {0 if common_ast_family is None else common_ast_family.emitted} ({common_ast_yield:.1f}%)",
+        f"- Common-AST cases: {stats.common_ast_cases}",
         f"- Interprocedural candidates: {stats.interprocedural_candidates}",
-        f"- Interprocedural cases: {stats.interprocedural_cases} ({interprocedural_yield:.1f}%)",
+        f"- Interprocedural relations tested: {0 if interprocedural_family is None else interprocedural_family.emitted} ({interprocedural_yield:.1f}%)",
+        f"- Interprocedural cases: {stats.interprocedural_cases}",
+        "",
+        "## Semantic Family Coverage",
+        "",
+        *generator_family_lines,
         "",
         "## Coverage Delta",
         "",
@@ -420,6 +493,7 @@ def write_reports(
                 "percent_points": percent_delta(combined, target_only),
             },
         },
+        "generator_coverage": [family.__dict__ for family in generator_families],
     }
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -437,6 +511,7 @@ def main() -> None:
     pytest_extra = list(args.pytest_arg)
 
     stats = relation_stats(analysis_dir, generated_tests)
+    generator_families = generator_coverage(analysis_dir, generated_tests)
     target_only = coverage_totals(target_tests + pytest_extra, target_project, source_root)
     generated_only = coverage_totals([str(generated_tests), *pytest_extra], target_project, source_root)
     combined = coverage_totals([*target_tests, str(generated_tests), *pytest_extra], target_project, source_root)
@@ -460,6 +535,7 @@ def main() -> None:
         combined,
         target_tests,
         str(generated_tests),
+        generator_families,
     )
     print(markdown_path)
     print(json_path)

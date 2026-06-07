@@ -6,11 +6,14 @@ from pathlib import Path
 
 from tools.evaluation_stats import (
     CoverageTotals,
+    GeneratorCoverageFamily,
     line_delta,
     percent_delta,
+    RelationStats,
     relation_stats,
     svg_bar_chart,
     svg_stacked_bar,
+    write_reports,
 )
 
 
@@ -79,6 +82,35 @@ class EvaluationStatsTests(unittest.TestCase):
         self.assertIn("Generated", bar)
         self.assertIn("<svg", stacked)
         self.assertIn("Composition", stacked)
+
+    def test_write_reports_includes_generator_coverage_section(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            markdown = root / "evaluation.md"
+            json_report = root / "evaluation.json"
+            write_reports(
+                markdown,
+                json_report,
+                RelationStats(1, 1, 2, 1, 2, 1, 3, 1, 1, 1, 1, 1),
+                CoverageTotals(10, 100, 10.0, 0),
+                CoverageTotals(20, 100, 20.0, 0),
+                CoverageTotals(25, 100, 25.0, 0),
+                ["target/tests"],
+                "generated/tests",
+                [
+                    GeneratorCoverageFamily(
+                        name="transform_required_field",
+                        discovered=2,
+                        emitted=2,
+                        emitted_cases=3,
+                        strict_oracle=1,
+                        weak_oracle=1,
+                        coverage_percent=100.0,
+                    )
+                ],
+            )
+            self.assertIn("Semantic Family Coverage", markdown.read_text(encoding="utf-8"))
+            self.assertIn("transform_required_field", json_report.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

@@ -80,10 +80,38 @@ static-analysis facts without attempting a full Souffle translation of an entire
 Python program.
 
 For agent-run project evaluations, follow the full reporting protocol in
-`README.md`: run the Python fact baseline, run the Souffle backend, attempt test
-generation, validate generated tests, run coverage/evaluation visualizations,
-run mutation evaluation when applicable, and report the generated Markdown
-artifacts back to the user.
+`README.md`: prefer `tools/evaluate_pipeline.py` for a consolidated run, or run
+the Python fact baseline, the Souffle backend, test generation, validation,
+coverage/evaluation, generator semantic-coverage measurement, mutation
+evaluation, and optional invariant/metamorphic lanes manually when you need
+stage-by-stage inspection.
+
+## Preferred evaluation entry point
+
+For most full-target runs, start with the orchestrated pipeline:
+
+```bash
+python3 tools/evaluate_pipeline.py \
+  --target-project <python-project> \
+  --project-name <project-name> \
+  --work-dir /tmp/sps-<project-name>-eval
+```
+
+Optional lanes:
+
+- `--with-static-metamorphic` to validate stable derived relations under
+  source/fact-preserving transforms.
+- `--with-invariants --invariant-spec <call-specs.json>` to mine quarantined
+  structured-output invariants from replayable call specs.
+- `--with-plateau` to generate quarantined plateau/LLM candidate prompts and,
+  when provided, proposal-backed candidate tests.
+- mutation evaluation is included by default; use `--skip-mutation` to disable
+  it for lightweight runs.
+
+This produces:
+
+- `/tmp/sps-<project-name>-eval/pipeline_report.md`
+- `/tmp/sps-<project-name>-eval/pipeline_report.json`
 
 ## Generate facts
 

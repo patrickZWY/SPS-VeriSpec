@@ -163,13 +163,26 @@ a violation indicts the checker even though the checker produced the corpus.
 
 Phase 1 relations: MR-LIT (literal interchange), MR-ALPHA (bound-variable
 renaming), MR-DEADLET (unused `let` wrap), MR-LAM (lambda wrap → `fresh -> T`),
-MR-ERRPROP (a closed ill-typed subterm keeps any enclosing term ill-typed). Over
-the size-9 corpus (~58k applications) every relation holds **except MR-DEADLET**,
-which surfaced a real soundness bug in the subject checker — confirmed against
-the original Haskell. See [METAMORPHIC_FINDINGS.md](METAMORPHIC_FINDINGS.md).
+MR-ERRPROP (a closed ill-typed subterm keeps any enclosing term ill-typed).
+
+Phase 1.5 added three relations from a recent-literature scan
+([metamorphic-related-work.md](metamorphic-related-work.md)):
+
+- **MR-CLASH** (Hephaestus type-overwriting): a closed term of one ground type
+  grafted into a slot pinned to a different ground type must be rejected. Sound,
+  zero violations — validates the rejection machinery.
+- **MR-KPROJ** (EMI dead context): `K e junk` must have the same type as `e`.
+- **MR-LETLAM** (Interrogation-Testing precision): app-form well-typed ⟹ let-form
+  well-typed and the app-form type is an instance of the let-form type.
+
+Over the size-9 corpus (~67k applications) three relations found **real,
+Haskell-confirmed bugs**: MR-DEADLET and MR-KPROJ the wrong-type substitution bug
+(Finding 1), and **MR-LETLAM a new over-acceptance bug** where the checker accepts
+the ill-typed `(\x. (x True) True) (\i. i)` (Finding 2). MR-CLASH stays at zero
+violations. See [METAMORPHIC_FINDINGS.md](METAMORPHIC_FINDINGS.md).
 
 This is the README's original goal realized: composing simpler expressions
-exposed a type-checker bug the 42 hand-written tests missed, found reference-free.
+exposed type-checker bugs the 42 hand-written tests missed, found reference-free.
 
 ## Next steps
 

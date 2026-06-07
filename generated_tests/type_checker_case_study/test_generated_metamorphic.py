@@ -140,30 +140,111 @@ CASES = [
     ),
     pytest.param(
         {
-            'mr': 'MR-ALPHA',
-            'relation': 'equal_outcome',
-            'source': Lam('x', Lam('y', ETrue())),
-            'transformed': Lam('w0', Lam('y', ETrue())),
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': EFalse(),
+            'transformed': If(ETrue(), Lit(0), EFalse()),
         },
-        id='MR-ALPHA-Lam-x-Lam-y-ETrue--Lam-w0-Lam-y-ETrue',
+        id='MR-CLASH-EFalse--If-ETrue-Lit-0-EFalse',
     ),
     pytest.param(
         {
-            'mr': 'MR-ALPHA',
-            'relation': 'equal_outcome',
-            'source': Lam('x', Lam('y', ETrue())),
-            'transformed': Lam('x', Lam('w0', ETrue())),
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': ETrue(),
+            'transformed': If(ETrue(), Lit(0), ETrue()),
         },
-        id='MR-ALPHA-Lam-x-Lam-y-ETrue--Lam-x-Lam-w0-ETrue',
+        id='MR-CLASH-ETrue--If-ETrue-Lit-0-ETrue',
     ),
     pytest.param(
         {
-            'mr': 'MR-ALPHA',
-            'relation': 'equal_outcome',
-            'source': Lam('x', Lam('y', Var('y'))),
-            'transformed': Lam('w0', Lam('y', Var('y'))),
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': Lit(0),
+            'transformed': If(ETrue(), ETrue(), Lit(0)),
         },
-        id='MR-ALPHA-Lam-x-Lam-y-Var-y--Lam-w0-Lam-y-Var-y',
+        id='MR-CLASH-Lit-0--If-ETrue-ETrue-Lit-0',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': Lit(0),
+            'transformed': If(Lit(0), ETrue(), EFalse()),
+        },
+        id='MR-CLASH-Lit-0--If-Lit-0-ETrue-EFalse',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': EFalse(),
+            'transformed': App(Lam('x', If(ETrue(), Var('x'), Lit(0))), EFalse()),
+        },
+        id='MR-CLASH-EFalse--App-Lam-x-If-ETrue-Var-x-Lit-0-EFalse',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': ETrue(),
+            'transformed': App(Lam('x', If(ETrue(), Var('x'), Lit(0))), ETrue()),
+        },
+        id='MR-CLASH-ETrue--App-Lam-x-If-ETrue-Var-x-Lit-0-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': Lit(0),
+            'transformed': App(Lam('x', If(Var('x'), ETrue(), EFalse())), Lit(0)),
+        },
+        id='MR-CLASH-Lit-0--App-Lam-x-If-Var-x-ETrue-EFalse-Lit-0',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': EFalse(),
+            'transformed': If(ETrue(), Lam('x', If(Var('x'), ETrue(), EFalse())), EFalse()),
+        },
+        id='MR-CLASH-EFalse--If-ETrue-Lam-x-If-Var-x-ETrue-EFalse-EFalse',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': ETrue(),
+            'transformed': If(ETrue(), Lam('x', If(Var('x'), ETrue(), EFalse())), ETrue()),
+        },
+        id='MR-CLASH-ETrue--If-ETrue-Lam-x-If-Var-x-ETrue-EFalse-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': Lit(0),
+            'transformed': If(ETrue(), Lam('x', If(Var('x'), ETrue(), EFalse())), Lit(0)),
+        },
+        id='MR-CLASH-Lit-0--If-ETrue-Lam-x-If-Var-x-ETrue-EFalse-Lit-0',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': Let('x', EFalse(), ETrue()),
+            'transformed': If(ETrue(), Lit(0), Let('x', EFalse(), ETrue())),
+        },
+        id='MR-CLASH-Let-x-EFalse-ETrue--If-ETrue-Lit-0-Let-x-EFalse-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-CLASH',
+            'relation': 'must_reject',
+            'source': Let('x', ETrue(), ETrue()),
+            'transformed': If(ETrue(), Lit(0), Let('x', ETrue(), ETrue())),
+        },
+        id='MR-CLASH-Let-x-ETrue-ETrue--If-ETrue-Lit-0-Let-x-ETrue-ETrue',
     ),
     pytest.param(
         {
@@ -275,33 +356,6 @@ CASES = [
     ),
     pytest.param(
         {
-            'mr': 'MR-DEADLET',
-            'relation': 'equal_outcome',
-            'source': Lam('x', Lam('y', Var('y'))),
-            'transformed': Let('w0', ETrue(), Lam('x', Lam('y', Var('y')))),
-        },
-        id='MR-DEADLET-Lam-x-Lam-y-Var-y--Let-w0-ETrue-Lam-x-Lam-y-Var-y',
-    ),
-    pytest.param(
-        {
-            'mr': 'MR-DEADLET',
-            'relation': 'equal_outcome',
-            'source': Let('x', EFalse(), ETrue()),
-            'transformed': Let('w0', ETrue(), Let('x', EFalse(), ETrue())),
-        },
-        id='MR-DEADLET-Let-x-EFalse-ETrue--Let-w0-ETrue-Let-x-EFalse-ETrue',
-    ),
-    pytest.param(
-        {
-            'mr': 'MR-DEADLET',
-            'relation': 'equal_outcome',
-            'source': Let('x', ETrue(), ETrue()),
-            'transformed': Let('w0', ETrue(), Let('x', ETrue(), ETrue())),
-        },
-        id='MR-DEADLET-Let-x-ETrue-ETrue--Let-w0-ETrue-Let-x-ETrue-ETrue',
-    ),
-    pytest.param(
-        {
             'mr': 'MR-ERRPROP',
             'relation': 'propagates_error',
             'source': Lam('x', App(Var('x'), Var('x'))),
@@ -410,30 +464,111 @@ CASES = [
     ),
     pytest.param(
         {
-            'mr': 'MR-ERRPROP',
-            'relation': 'propagates_error',
-            'source': If(ETrue(), EFalse(), Lam('x', Var('x'))),
-            'transformed': Let('w0', ETrue(), If(ETrue(), EFalse(), Lam('x', Var('x')))),
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': EFalse(),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), EFalse()), ETrue()),
         },
-        id='MR-ERRPROP-If-ETrue-EFalse-Lam-x-Var-x--Let-w0-ETrue-If-ETrue-EFalse-Lam-x-Var-x',
+        id='MR-KPROJ-EFalse--App-App-Lam-a-Lam-b-Var-a-EFalse-ETrue',
     ),
     pytest.param(
         {
-            'mr': 'MR-ERRPROP',
-            'relation': 'propagates_error',
-            'source': If(ETrue(), ETrue(), Lam('x', ETrue())),
-            'transformed': App(If(ETrue(), ETrue(), Lam('x', ETrue())), ETrue()),
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': ETrue(),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), ETrue()), ETrue()),
         },
-        id='MR-ERRPROP-If-ETrue-ETrue-Lam-x-ETrue--App-If-ETrue-ETrue-Lam-x-ETrue-ETrue',
+        id='MR-KPROJ-ETrue--App-App-Lam-a-Lam-b-Var-a-ETrue-ETrue',
     ),
     pytest.param(
         {
-            'mr': 'MR-ERRPROP',
-            'relation': 'propagates_error',
-            'source': If(ETrue(), ETrue(), Lam('x', ETrue())),
-            'transformed': Let('w0', If(ETrue(), ETrue(), Lam('x', ETrue())), ETrue()),
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': Lit(0),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lit(0)), ETrue()),
         },
-        id='MR-ERRPROP-If-ETrue-ETrue-Lam-x-ETrue--Let-w0-If-ETrue-ETrue-Lam-x-ETrue-ETrue',
+        id='MR-KPROJ-Lit-0--App-App-Lam-a-Lam-b-Var-a-Lit-0-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': Lam('x', EFalse()),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', EFalse())), ETrue()),
+        },
+        id='MR-KPROJ-Lam-x-EFalse--App-App-Lam-a-Lam-b-Var-a-Lam-x-EFalse-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': Lam('x', ETrue()),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', ETrue())), ETrue()),
+        },
+        id='MR-KPROJ-Lam-x-ETrue--App-App-Lam-a-Lam-b-Var-a-Lam-x-ETrue-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': Lam('x', Lit(0)),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', Lit(0))), ETrue()),
+        },
+        id='MR-KPROJ-Lam-x-Lit-0--App-App-Lam-a-Lam-b-Var-a-Lam-x-Lit-0-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': Lam('x', Var('x')),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', Var('x'))), ETrue()),
+        },
+        id='MR-KPROJ-Lam-x-Var-x--App-App-Lam-a-Lam-b-Var-a-Lam-x-Var-x-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': Lam('x', Lam('x', EFalse())),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', Lam('x', EFalse()))), ETrue()),
+        },
+        id='MR-KPROJ-Lam-x-Lam-x-EFalse--App-App-Lam-a-Lam-b-Var-a-Lam-x-Lam-x-EFalse-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': Lam('x', Lam('x', ETrue())),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', Lam('x', ETrue()))), ETrue()),
+        },
+        id='MR-KPROJ-Lam-x-Lam-x-ETrue--App-App-Lam-a-Lam-b-Var-a-Lam-x-Lam-x-ETrue-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': Lam('x', Lam('x', Lit(0))),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', Lam('x', Lit(0)))), ETrue()),
+        },
+        id='MR-KPROJ-Lam-x-Lam-x-Lit-0--App-App-Lam-a-Lam-b-Var-a-Lam-x-Lam-x-Lit-0-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': Lam('x', Lam('x', Var('x'))),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', Lam('x', Var('x')))), ETrue()),
+        },
+        id='MR-KPROJ-Lam-x-Lam-x-Var-x--App-App-Lam-a-Lam-b-Var-a-Lam-x-Lam-x-Var-x-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': Lam('x', Lam('y', ETrue())),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', Lam('y', ETrue()))), ETrue()),
+        },
+        id='MR-KPROJ-Lam-x-Lam-y-ETrue--App-App-Lam-a-Lam-b-Var-a-Lam-x-Lam-y-ETrue-ETrue',
     ),
     pytest.param(
         {
@@ -545,30 +680,111 @@ CASES = [
     ),
     pytest.param(
         {
-            'mr': 'MR-LAM',
-            'relation': 'lambda_wrap',
-            'source': Lam('x', Lam('y', Var('y'))),
-            'transformed': Lam('w0', Lam('x', Lam('y', Var('y')))),
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', EFalse()), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), EFalse()),
         },
-        id='MR-LAM-Lam-x-Lam-y-Var-y--Lam-w0-Lam-x-Lam-y-Var-y',
+        id='MR-LETLAM-App-Lam-x-EFalse-Lam-i-Var-i--Let-x-Lam-i-Var-i-EFalse',
     ),
     pytest.param(
         {
-            'mr': 'MR-LAM',
-            'relation': 'lambda_wrap',
-            'source': Let('x', EFalse(), ETrue()),
-            'transformed': Lam('w0', Let('x', EFalse(), ETrue())),
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', ETrue()), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), ETrue()),
         },
-        id='MR-LAM-Let-x-EFalse-ETrue--Lam-w0-Let-x-EFalse-ETrue',
+        id='MR-LETLAM-App-Lam-x-ETrue-Lam-i-Var-i--Let-x-Lam-i-Var-i-ETrue',
     ),
     pytest.param(
         {
-            'mr': 'MR-LAM',
-            'relation': 'lambda_wrap',
-            'source': Let('x', ETrue(), ETrue()),
-            'transformed': Lam('w0', Let('x', ETrue(), ETrue())),
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', Lit(0)), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), Lit(0)),
         },
-        id='MR-LAM-Let-x-ETrue-ETrue--Lam-w0-Let-x-ETrue-ETrue',
+        id='MR-LETLAM-App-Lam-x-Lit-0-Lam-i-Var-i--Let-x-Lam-i-Var-i-Lit-0',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', Var('x')), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), Var('x')),
+        },
+        id='MR-LETLAM-App-Lam-x-Var-x-Lam-i-Var-i--Let-x-Lam-i-Var-i-Var-x',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', Lam('x', EFalse())), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), Lam('x', EFalse())),
+        },
+        id='MR-LETLAM-App-Lam-x-Lam-x-EFalse-Lam-i-Var-i--Let-x-Lam-i-Var-i-Lam-x-EFalse',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', Lam('x', ETrue())), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), Lam('x', ETrue())),
+        },
+        id='MR-LETLAM-App-Lam-x-Lam-x-ETrue-Lam-i-Var-i--Let-x-Lam-i-Var-i-Lam-x-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', Lam('x', Lit(0))), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), Lam('x', Lit(0))),
+        },
+        id='MR-LETLAM-App-Lam-x-Lam-x-Lit-0-Lam-i-Var-i--Let-x-Lam-i-Var-i-Lam-x-Lit-0',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', Lam('x', Var('x'))), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), Lam('x', Var('x'))),
+        },
+        id='MR-LETLAM-App-Lam-x-Lam-x-Var-x-Lam-i-Var-i--Let-x-Lam-i-Var-i-Lam-x-Var-x',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', Lam('y', ETrue())), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), Lam('y', ETrue())),
+        },
+        id='MR-LETLAM-App-Lam-x-Lam-y-ETrue-Lam-i-Var-i--Let-x-Lam-i-Var-i-Lam-y-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', Lam('y', Var('y'))), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), Lam('y', Var('y'))),
+        },
+        id='MR-LETLAM-App-Lam-x-Lam-y-Var-y-Lam-i-Var-i--Let-x-Lam-i-Var-i-Lam-y-Var-y',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', App(Var('x'), ETrue())), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), App(Var('x'), ETrue())),
+        },
+        id='MR-LETLAM-App-Lam-x-App-Var-x-ETrue-Lam-i-Var-i--Let-x-Lam-i-Var-i-App-Var-x-ETrue',
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', Lam('x', Lam('x', EFalse()))), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), Lam('x', Lam('x', EFalse()))),
+        },
+        id='MR-LETLAM-App-Lam-x-Lam-x-Lam-x-EFalse-Lam-i-Var-i--Let-x-Lam-i-Var-i-Lam-x-Lam-x-EFalse',
     ),
     pytest.param(
         {
@@ -680,40 +896,13 @@ CASES = [
     ),
     pytest.param(
         {
-            'mr': 'MR-LIT',
-            'relation': 'equal_outcome',
-            'source': Let('x', ETrue(), ETrue()),
-            'transformed': Let('x', EFalse(), ETrue()),
-        },
-        id='MR-LIT-Let-x-ETrue-ETrue--Let-x-EFalse-ETrue',
-    ),
-    pytest.param(
-        {
-            'mr': 'MR-LIT',
-            'relation': 'equal_outcome',
-            'source': Let('x', ETrue(), ETrue()),
-            'transformed': Let('x', ETrue(), EFalse()),
-        },
-        id='MR-LIT-Let-x-ETrue-ETrue--Let-x-ETrue-EFalse',
-    ),
-    pytest.param(
-        {
-            'mr': 'MR-LIT',
-            'relation': 'equal_outcome',
-            'source': Let('x', Lit(0), ETrue()),
-            'transformed': Let('x', Lit(1), ETrue()),
-        },
-        id='MR-LIT-Let-x-Lit-0-ETrue--Let-x-Lit-1-ETrue',
-    ),
-    pytest.param(
-        {
             'mr': 'MR-DEADLET',
             'relation': 'equal_outcome',
             'source': Lam('x', Lam('y', App(Var('x'), App(Var('x'), Var('y'))))),
             'transformed': Let('w0', ETrue(), Lam('x', Lam('y', App(Var('x'), App(Var('x'), Var('y')))))),
         },
         id='MR-DEADLET-Lam-x-Lam-y-App-Var-x-App-Var-x-Var-y--Let-w0-ETrue-Lam-x-Lam-y-App-Var-x-App-Var-x-Var-y',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
@@ -723,7 +912,7 @@ CASES = [
             'transformed': Let('w0', ETrue(), Lam('x', Lam('y', App(Var('y'), App(Var('y'), Var('x')))))),
         },
         id='MR-DEADLET-Lam-x-Lam-y-App-Var-y-App-Var-y-Var-x--Let-w0-ETrue-Lam-x-Lam-y-App-Var-y-App-Var-y-Var-x',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
@@ -733,7 +922,7 @@ CASES = [
             'transformed': Let('w0', ETrue(), Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), EFalse()))),
         },
         id='MR-DEADLET-Lam-x-App-App-App-Var-x-ETrue-ETrue-EFalse--Let-w0-ETrue-Lam-x-App-App-App-Var-x-ETrue-ETrue-EFalse',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
@@ -743,7 +932,7 @@ CASES = [
             'transformed': Let('w0', ETrue(), Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), ETrue()))),
         },
         id='MR-DEADLET-Lam-x-App-App-App-Var-x-ETrue-ETrue-ETrue--Let-w0-ETrue-Lam-x-App-App-App-Var-x-ETrue-ETrue-ETrue',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
@@ -753,7 +942,7 @@ CASES = [
             'transformed': Let('w0', ETrue(), Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), Lit(0)))),
         },
         id='MR-DEADLET-Lam-x-App-App-App-Var-x-ETrue-ETrue-Lit-0--Let-w0-ETrue-Lam-x-App-App-App-Var-x-ETrue-ETrue-Lit-0',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
@@ -763,7 +952,7 @@ CASES = [
             'transformed': Let('w0', ETrue(), Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), Var('x')))),
         },
         id='MR-DEADLET-Lam-x-App-App-App-Var-x-ETrue-ETrue-Var-x--Let-w0-ETrue-Lam-x-App-App-App-Var-x-ETrue-ETrue-Var-x',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
@@ -773,7 +962,7 @@ CASES = [
             'transformed': Let('w0', ETrue(), Lam('x', App(Var('x'), App(App(Var('x'), ETrue()), ETrue())))),
         },
         id='MR-DEADLET-Lam-x-App-Var-x-App-App-Var-x-ETrue-ETrue--Let-w0-ETrue-Lam-x-App-Var-x-App-App-Var-x-ETrue-ETrue',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
@@ -783,77 +972,167 @@ CASES = [
             'transformed': Let('w0', ETrue(), Lam('x', Lam('x', Lam('y', App(Var('x'), App(Var('x'), Var('y'))))))),
         },
         id='MR-DEADLET-Lam-x-Lam-x-Lam-y-App-Var-x-App-Var-x-Var-y--Let-w0-ETrue-Lam-x-Lam-x-Lam-y-App-Var-x-App-Var-x-Var-y',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
-            'mr': 'MR-DEADLET',
+            'mr': 'MR-KPROJ',
             'relation': 'equal_outcome',
-            'source': Lam('x', Lam('x', Lam('y', App(Var('y'), App(Var('y'), Var('x')))))),
-            'transformed': Let('w0', ETrue(), Lam('x', Lam('x', Lam('y', App(Var('y'), App(Var('y'), Var('x'))))))),
+            'source': Lam('x', Lam('y', App(Var('x'), App(Var('x'), Var('y'))))),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', Lam('y', App(Var('x'), App(Var('x'), Var('y')))))), ETrue()),
         },
-        id='MR-DEADLET-Lam-x-Lam-x-Lam-y-App-Var-y-App-Var-y-Var-x--Let-w0-ETrue-Lam-x-Lam-x-Lam-y-App-Var-y-App-Var-y-Var-x',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        id='MR-KPROJ-Lam-x-Lam-y-App-Var-x-App-Var-x-Var-y--App-App-Lam-a-Lam-b-Var-a-Lam-x-Lam-y-App-Var-x-App-Var-x-Var-y-ETrue',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
-            'mr': 'MR-DEADLET',
+            'mr': 'MR-KPROJ',
             'relation': 'equal_outcome',
-            'source': Lam('x', Lam('y', App(Var('x'), Lam('z', App(Var('x'), Var('y')))))),
-            'transformed': Let('w0', ETrue(), Lam('x', Lam('y', App(Var('x'), Lam('z', App(Var('x'), Var('y'))))))),
+            'source': Lam('x', Lam('y', App(Var('y'), App(Var('y'), Var('x'))))),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', Lam('y', App(Var('y'), App(Var('y'), Var('x')))))), ETrue()),
         },
-        id='MR-DEADLET-Lam-x-Lam-y-App-Var-x-Lam-z-App-Var-x-Var-y--Let-w0-ETrue-Lam-x-Lam-y-App-Var-x-Lam-z-App-Var-x-Var-y',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        id='MR-KPROJ-Lam-x-Lam-y-App-Var-y-App-Var-y-Var-x--App-App-Lam-a-Lam-b-Var-a-Lam-x-Lam-y-App-Var-y-App-Var-y-Var-x-ETrue',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
-            'mr': 'MR-DEADLET',
+            'mr': 'MR-KPROJ',
             'relation': 'equal_outcome',
-            'source': Lam('x', Lam('y', App(Var('y'), Lam('z', App(Var('y'), Var('x')))))),
-            'transformed': Let('w0', ETrue(), Lam('x', Lam('y', App(Var('y'), Lam('z', App(Var('y'), Var('x'))))))),
+            'source': Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), EFalse())),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), EFalse()))), ETrue()),
         },
-        id='MR-DEADLET-Lam-x-Lam-y-App-Var-y-Lam-z-App-Var-y-Var-x--Let-w0-ETrue-Lam-x-Lam-y-App-Var-y-Lam-z-App-Var-y-Var-x',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        id='MR-KPROJ-Lam-x-App-App-App-Var-x-ETrue-ETrue-EFalse--App-App-Lam-a-Lam-b-Var-a-Lam-x-App-App-App-Var-x-ETrue-ETrue-EFalse-ETrue',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
-            'mr': 'MR-DEADLET',
+            'mr': 'MR-KPROJ',
             'relation': 'equal_outcome',
-            'source': Lam('x', Lam('y', Lam('z', App(Var('x'), App(Var('x'), Var('y')))))),
-            'transformed': Let('w0', ETrue(), Lam('x', Lam('y', Lam('z', App(Var('x'), App(Var('x'), Var('y'))))))),
+            'source': Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), ETrue())),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), ETrue()))), ETrue()),
         },
-        id='MR-DEADLET-Lam-x-Lam-y-Lam-z-App-Var-x-App-Var-x-Var-y--Let-w0-ETrue-Lam-x-Lam-y-Lam-z-App-Var-x-App-Var-x-Var-y',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        id='MR-KPROJ-Lam-x-App-App-App-Var-x-ETrue-ETrue-ETrue--App-App-Lam-a-Lam-b-Var-a-Lam-x-App-App-App-Var-x-ETrue-ETrue-ETrue-ETrue',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
-            'mr': 'MR-DEADLET',
+            'mr': 'MR-KPROJ',
             'relation': 'equal_outcome',
-            'source': Lam('x', Lam('y', Lam('z', App(Var('x'), App(Var('x'), Var('z')))))),
-            'transformed': Let('w0', ETrue(), Lam('x', Lam('y', Lam('z', App(Var('x'), App(Var('x'), Var('z'))))))),
+            'source': Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), Lit(0))),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), Lit(0)))), ETrue()),
         },
-        id='MR-DEADLET-Lam-x-Lam-y-Lam-z-App-Var-x-App-Var-x-Var-z--Let-w0-ETrue-Lam-x-Lam-y-Lam-z-App-Var-x-App-Var-x-Var-z',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        id='MR-KPROJ-Lam-x-App-App-App-Var-x-ETrue-ETrue-Lit-0--App-App-Lam-a-Lam-b-Var-a-Lam-x-App-App-App-Var-x-ETrue-ETrue-Lit-0-ETrue',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
-            'mr': 'MR-DEADLET',
+            'mr': 'MR-KPROJ',
             'relation': 'equal_outcome',
-            'source': Lam('x', Lam('y', Lam('z', App(Var('y'), App(Var('y'), Var('x')))))),
-            'transformed': Let('w0', ETrue(), Lam('x', Lam('y', Lam('z', App(Var('y'), App(Var('y'), Var('x'))))))),
+            'source': Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), Var('x'))),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', App(App(App(Var('x'), ETrue()), ETrue()), Var('x')))), ETrue()),
         },
-        id='MR-DEADLET-Lam-x-Lam-y-Lam-z-App-Var-y-App-Var-y-Var-x--Let-w0-ETrue-Lam-x-Lam-y-Lam-z-App-Var-y-App-Var-y-Var-x',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        id='MR-KPROJ-Lam-x-App-App-App-Var-x-ETrue-ETrue-Var-x--App-App-Lam-a-Lam-b-Var-a-Lam-x-App-App-App-Var-x-ETrue-ETrue-Var-x-ETrue',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     ),
     pytest.param(
         {
-            'mr': 'MR-DEADLET',
+            'mr': 'MR-KPROJ',
             'relation': 'equal_outcome',
-            'source': Lam('x', Lam('y', Lam('z', App(Var('y'), App(Var('y'), Var('z')))))),
-            'transformed': Let('w0', ETrue(), Lam('x', Lam('y', Lam('z', App(Var('y'), App(Var('y'), Var('z'))))))),
+            'source': Lam('x', App(Var('x'), App(App(Var('x'), ETrue()), ETrue()))),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', App(Var('x'), App(App(Var('x'), ETrue()), ETrue())))), ETrue()),
         },
-        id='MR-DEADLET-Lam-x-Lam-y-Lam-z-App-Var-y-App-Var-y-Var-z--Let-w0-ETrue-Lam-x-Lam-y-Lam-z-App-Var-y-App-Var-y-Var-z',
-        marks=pytest.mark.xfail(strict=True, reason='exposes the inferLam substitution-idempotence bug: a dead let preserves type but the checker changes it (see METAMORPHIC_FINDINGS.md)'),
+        id='MR-KPROJ-Lam-x-App-Var-x-App-App-Var-x-ETrue-ETrue--App-App-Lam-a-Lam-b-Var-a-Lam-x-App-Var-x-App-App-Var-x-ETrue-ETrue-ETrue',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-KPROJ',
+            'relation': 'equal_outcome',
+            'source': Lam('x', Lam('x', Lam('y', App(Var('x'), App(Var('x'), Var('y')))))),
+            'transformed': App(App(Lam('a', Lam('b', Var('a'))), Lam('x', Lam('x', Lam('y', App(Var('x'), App(Var('x'), Var('y'))))))), ETrue()),
+        },
+        id='MR-KPROJ-Lam-x-Lam-x-Lam-y-App-Var-x-App-Var-x-Var-y--App-App-Lam-a-Lam-b-Var-a-Lam-x-Lam-x-Lam-y-App-Var-x-App-Var-x-Var-y-ETrue',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', App(App(Var('x'), ETrue()), EFalse())), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), App(App(Var('x'), ETrue()), EFalse())),
+        },
+        id='MR-LETLAM-App-Lam-x-App-App-Var-x-ETrue-EFalse-Lam-i-Var-i--Let-x-Lam-i-Var-i-App-App-Var-x-ETrue-EFalse',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', App(App(Var('x'), ETrue()), ETrue())), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), App(App(Var('x'), ETrue()), ETrue())),
+        },
+        id='MR-LETLAM-App-Lam-x-App-App-Var-x-ETrue-ETrue-Lam-i-Var-i--Let-x-Lam-i-Var-i-App-App-Var-x-ETrue-ETrue',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', App(App(Var('x'), ETrue()), Lit(0))), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), App(App(Var('x'), ETrue()), Lit(0))),
+        },
+        id='MR-LETLAM-App-Lam-x-App-App-Var-x-ETrue-Lit-0-Lam-i-Var-i--Let-x-Lam-i-Var-i-App-App-Var-x-ETrue-Lit-0',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', App(App(Lam('y', Var('y')), Var('x')), EFalse())), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), App(App(Lam('y', Var('y')), Var('x')), EFalse())),
+        },
+        id='MR-LETLAM-App-Lam-x-App-App-Lam-y-Var-y-Var-x-EFalse-Lam-i-Var-i--Let-x-Lam-i-Var-i-App-App-Lam-y-Var-y-Var-x-EFalse',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', App(App(Lam('y', Var('y')), Var('x')), ETrue())), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), App(App(Lam('y', Var('y')), Var('x')), ETrue())),
+        },
+        id='MR-LETLAM-App-Lam-x-App-App-Lam-y-Var-y-Var-x-ETrue-Lam-i-Var-i--Let-x-Lam-i-Var-i-App-App-Lam-y-Var-y-Var-x-ETrue',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', App(App(Lam('y', Var('y')), Var('x')), Lit(0))), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), App(App(Lam('y', Var('y')), Var('x')), Lit(0))),
+        },
+        id='MR-LETLAM-App-Lam-x-App-App-Lam-y-Var-y-Var-x-Lit-0-Lam-i-Var-i--Let-x-Lam-i-Var-i-App-App-Lam-y-Var-y-Var-x-Lit-0',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', App(App(Var('x'), ETrue()), Lam('x', EFalse()))), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), App(App(Var('x'), ETrue()), Lam('x', EFalse()))),
+        },
+        id='MR-LETLAM-App-Lam-x-App-App-Var-x-ETrue-Lam-x-EFalse-Lam-i-Var-i--Let-x-Lam-i-Var-i-App-App-Var-x-ETrue-Lam-x-EFalse',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
+    ),
+    pytest.param(
+        {
+            'mr': 'MR-LETLAM',
+            'relation': 'app_instance_of_let',
+            'source': App(Lam('x', App(App(Var('x'), ETrue()), Lam('x', ETrue()))), Lam('i', Var('i'))),
+            'transformed': Let('x', Lam('i', Var('i')), App(App(Var('x'), ETrue()), Lam('x', ETrue()))),
+        },
+        id='MR-LETLAM-App-Lam-x-App-App-Var-x-ETrue-Lam-x-ETrue-Lam-i-Var-i--Let-x-Lam-i-Var-i-App-App-Var-x-ETrue-Lam-x-ETrue',
+        marks=pytest.mark.xfail(strict=True, reason='exposes a known inferLam substitution bug -- either a changed type under a semantics-preserving transform, or acceptance of an ill-typed program (see METAMORPHIC_FINDINGS.md)'),
     )
 ]
 

@@ -1,99 +1,104 @@
 # Metamorphic oracle report (Phase 1)
 
-Each source expression from the composition corpus is transformed by every applicable metamorphic relation, and the relation is checked against the oracle. Zero violations is the expected, meaningful result: an independent cross-check that the relations and the port agree.
+Each source expression from the composition corpus is transformed by every applicable metamorphic relation, and the relation is checked against the oracle. Violations are documented findings (real checker bugs); see METAMORPHIC_FINDINGS.md. MR-CLASH is a pure soundness check and is expected to stay at zero.
 
 ## Coverage
 
 - Source expressions: 5617
-- Total MR applications: 58121
-- Violations: 44
+- Total MR applications: 67351
+- Violations: 224
 
 ### Applications per relation
 
 - `MR-ALPHA`: 15529
+- `MR-CLASH`: 2600
 - `MR-DEADLET`: 5617
 - `MR-ERRPROP`: 20804
+- `MR-KPROJ`: 5617
 - `MR-LAM`: 5617
+- `MR-LETLAM`: 1013
 - `MR-LIT`: 10554
 
 ## Violations
 
 Each row is a checker bug or an MR bug; treat as a review record, not a trusted-suite failure.
 
+- `MR-LETLAM`: 136
 - `MR-DEADLET`: 44
+- `MR-KPROJ`: 44
 
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((x True) True)) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((x True) True))` : `error:application-mismatch`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((x True) 0)) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((x True) 0))` : `error:application-mismatch`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((\x. x) (x True))) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((\x. x) (x True)))` : `Bool`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((x True) False)) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((x True) False))` : `error:application-mismatch`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((\y. (x y)) True)) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((\y. (x y)) True))` : `Bool`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((\y. (x True)) True)) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((\y. (x True)) True))` : `Bool`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((\y. (x True)) x)) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((\y. (x True)) x))` : `Bool`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((\y. (y True)) x)) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((\y. (y True)) x))` : `Bool`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((\y. y) (x True))) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((\y. y) (x True)))` : `Bool`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. (\y. ((x y) True))) (\i. i))` : `(a -> b)`
+  - transformed `(let x = (\i. i) in (\y. ((x y) True)))` : `((Bool -> a) -> a)`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. (\y. ((x True) True))) (\i. i))` : `(a -> b)`
+  - transformed `(let x = (\i. i) in (\y. ((x True) True)))` : `error:application-mismatch`
 - **MR-DEADLET** (`equal_outcome`)
   - source `(\x. (\y. (x (x y))))` : `((a -> b) -> (b -> b))`
   - transformed `(let w0 = True in (\x. (\y. (x (x y)))))` : `((a -> a) -> (a -> a))`
+- **MR-KPROJ** (`equal_outcome`)
+  - source `(\x. (\y. (x (x y))))` : `((a -> b) -> (b -> b))`
+  - transformed `(((\a. (\b. a)) (\x. (\y. (x (x y))))) True)` : `((a -> a) -> (a -> a))`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. (\y. (x (x y)))) (\i. i))` : `(a -> b)`
+  - transformed `(let x = (\i. i) in (\y. (x (x y))))` : `(a -> a)`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. (\y. ((x y) y))) (\i. i))` : `(a -> b)`
+  - transformed `(let x = (\i. i) in (\y. ((x y) y)))` : `error:occurs-check`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. (\y. ((x True) y))) (\i. i))` : `(a -> b)`
+  - transformed `(let x = (\i. i) in (\y. ((x True) y)))` : `error:application-mismatch`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. (\y. (y (x y)))) (\i. i))` : `((a -> b) -> b)`
+  - transformed `(let x = (\i. i) in (\y. (y (x y))))` : `error:occurs-check`
 - **MR-DEADLET** (`equal_outcome`)
   - source `(\x. (\y. (y (y x))))` : `(a -> ((b -> a) -> a))`
   - transformed `(let w0 = True in (\x. (\y. (y (y x)))))` : `(a -> ((a -> a) -> a))`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (((x True) True) True))` : `((Bool -> (Bool -> a)) -> b)`
-  - transformed `(let w0 = True in (\x. (((x True) True) True)))` : `((Bool -> (Bool -> (Bool -> a))) -> a)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (((x True) True) x))` : `((Bool -> (Bool -> a)) -> b)`
-  - transformed `(let w0 = True in (\x. (((x True) True) x)))` : `((Bool -> (Bool -> ((Bool -> (Bool -> a)) -> b))) -> b)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (x ((x True) True)))` : `((Bool -> (Bool -> a)) -> b)`
-  - transformed `(let w0 = True in (\x. (x ((x True) True))))` : `((Bool -> (Bool -> Bool)) -> a)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (if ((x True) True) then True else False))` : `((Bool -> (Bool -> a)) -> Bool)`
-  - transformed `(let w0 = True in (\x. (if ((x True) True) then True else False)))` : `((Bool -> (Bool -> Bool)) -> Bool)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (((x True) True) 0))` : `((Bool -> (Bool -> a)) -> b)`
-  - transformed `(let w0 = True in (\x. (((x True) True) 0)))` : `((Bool -> (Bool -> (Int -> a))) -> a)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (((x True) True) False))` : `((Bool -> (Bool -> a)) -> b)`
-  - transformed `(let w0 = True in (\x. (((x True) True) False)))` : `((Bool -> (Bool -> (Bool -> a))) -> a)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (\x. (\y. (x (x y)))))` : `(a -> ((b -> c) -> (c -> c)))`
-  - transformed `(let w0 = True in (\x. (\x. (\y. (x (x y))))))` : `(a -> ((b -> b) -> (b -> b)))`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (\x. (\y. (y (y x)))))` : `(a -> (b -> ((c -> b) -> b)))`
-  - transformed `(let w0 = True in (\x. (\x. (\y. (y (y x))))))` : `(a -> (b -> ((b -> b) -> b)))`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (\y. (\z. (x (x y)))))` : `((a -> b) -> (b -> (c -> b)))`
-  - transformed `(let w0 = True in (\x. (\y. (\z. (x (x y))))))` : `((a -> a) -> (a -> (b -> a)))`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (\y. (\z. (x (x z)))))` : `((a -> b) -> (c -> (b -> b)))`
-  - transformed `(let w0 = True in (\x. (\y. (\z. (x (x z))))))` : `((a -> a) -> (b -> (a -> a)))`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (\y. (\z. (y (y x)))))` : `(a -> ((b -> a) -> (c -> a)))`
-  - transformed `(let w0 = True in (\x. (\y. (\z. (y (y x))))))` : `(a -> ((a -> a) -> (b -> a)))`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (\y. (\z. (y (y z)))))` : `(a -> ((b -> c) -> (c -> c)))`
-  - transformed `(let w0 = True in (\x. (\y. (\z. (y (y z))))))` : `(a -> ((b -> b) -> (b -> b)))`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (\y. (\z. (z (z x)))))` : `(a -> (b -> ((c -> a) -> a)))`
-  - transformed `(let w0 = True in (\x. (\y. (\z. (z (z x))))))` : `(a -> (b -> ((a -> a) -> a)))`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (\y. (\z. (z (z y)))))` : `(a -> (b -> ((c -> b) -> b)))`
-  - transformed `(let w0 = True in (\x. (\y. (\z. (z (z y))))))` : `(a -> (b -> ((b -> b) -> b)))`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (\y. (x (\z. (x y)))))` : `(((a -> b) -> c) -> ((a -> c) -> c))`
-  - transformed `(let w0 = True in (\x. (\y. (x (\z. (x y))))))` : `(((a -> b) -> b) -> ((a -> b) -> b))`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (\y. (y (\z. (y x)))))` : `((a -> b) -> (((a -> c) -> b) -> b))`
-  - transformed `(let w0 = True in (\x. (\y. (y (\z. (y x))))))` : `((a -> b) -> (((a -> b) -> b) -> b))`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (((\y. (x y)) True) True))` : `((Bool -> a) -> b)`
-  - transformed `(let w0 = True in (\x. (((\y. (x y)) True) True)))` : `((Bool -> (Bool -> a)) -> a)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (((\y. (x True)) True) True))` : `((Bool -> a) -> b)`
-  - transformed `(let w0 = True in (\x. (((\y. (x True)) True) True)))` : `((Bool -> (Bool -> a)) -> a)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (((\y. (x y)) True) x))` : `((Bool -> a) -> b)`
-  - transformed `(let w0 = True in (\x. (((\y. (x y)) True) x)))` : `((Bool -> ((Bool -> a) -> b)) -> b)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (((\y. (x True)) True) x))` : `((Bool -> a) -> b)`
-  - transformed `(let w0 = True in (\x. (((\y. (x True)) True) x)))` : `((Bool -> ((Bool -> a) -> b)) -> b)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (((\y. (x True)) x) True))` : `((Bool -> a) -> b)`
-  - transformed `(let w0 = True in (\x. (((\y. (x True)) x) True)))` : `((Bool -> (Bool -> a)) -> a)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (((\y. (y True)) x) True))` : `((Bool -> a) -> b)`
-  - transformed `(let w0 = True in (\x. (((\y. (y True)) x) True)))` : `((Bool -> (Bool -> a)) -> a)`
-- **MR-DEADLET** (`equal_outcome`)
-  - source `(\x. (((\y. (x True)) x) x))` : `((Bool -> a) -> b)`
-  - transformed `(let w0 = True in (\x. (((\y. (x True)) x) x)))` : `((Bool -> ((Bool -> a) -> b)) -> b)`
+- **MR-KPROJ** (`equal_outcome`)
+  - source `(\x. (\y. (y (y x))))` : `(a -> ((b -> a) -> a))`
+  - transformed `(((\a. (\b. a)) (\x. (\y. (y (y x))))) True)` : `(a -> ((a -> a) -> a))`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. (\y. (y (y x)))) (\i. i))` : `((a -> (b -> b)) -> a)`
+  - transformed `(let x = (\i. i) in (\y. (y (y x))))` : `(((a -> a) -> (a -> a)) -> (a -> a))`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. (if True then (x True) else 0)) (\i. i))` : `Int`
+  - transformed `(let x = (\i. i) in (if True then (x True) else 0))` : `error:heterogeneous-if`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. (if True then 0 else (x True))) (\i. i))` : `Int`
+  - transformed `(let x = (\i. i) in (if True then 0 else (x True)))` : `error:heterogeneous-if`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((x True) (\y. True))) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((x True) (\y. True)))` : `error:application-mismatch`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((x True) (\y. y))) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((x True) (\y. y)))` : `error:application-mismatch`
+- **MR-LETLAM** (`app_instance_of_let`)
+  - source `((\x. ((x True) (\x. x))) (\i. i))` : `a`
+  - transformed `(let x = (\i. i) in ((x True) (\x. x)))` : `error:application-mismatch`

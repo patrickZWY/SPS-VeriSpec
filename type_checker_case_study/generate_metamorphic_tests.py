@@ -25,8 +25,9 @@ DEFAULT_OUTPUT = ROOT / "generated_tests" / "type_checker_case_study"
 TEST_PATH = "test_generated_metamorphic.py"
 
 XFAIL_REASON = (
-    "exposes the inferLam substitution-idempotence bug: a dead let preserves "
-    "type but the checker changes it (see METAMORPHIC_FINDINGS.md)"
+    "exposes a known inferLam substitution bug -- either a changed type under a "
+    "semantics-preserving transform, or acceptance of an ill-typed program "
+    "(see METAMORPHIC_FINDINGS.md)"
 )
 
 
@@ -35,31 +36,30 @@ def _instance_size(inst: MRInstance) -> int:
 
 
 def select_instances(
-    sources, outcomes, *, per_mr_hold: int, max_violations: int
+    sources, outcomes, *, per_mr_hold: int, per_mr_violation: int
 ) -> list[tuple[MRInstance, bool]]:
-    """Return (instance, holds) pairs: holding samples per MR + violations.
+    """Return (instance, holds) pairs: holding and violating samples per MR.
 
-    Holding cases are sampled smallest-first per MR for readability; violating
-    cases (the valuable ones) are collected across MRs up to ``max_violations``.
+    Both buckets are sampled per MR (smallest-first, for readability) so every
+    bug-finding relation is represented in the suite rather than being crowded
+    out by whichever MR happens to produce the smallest violations.
     """
     holding: dict[str, list[MRInstance]] = {mr: [] for mr in MR_GENERATORS}
-    violations: list[MRInstance] = []
+    violating: dict[str, list[MRInstance]] = {mr: [] for mr in MR_GENERATORS}
 
     ranked_sources = sorted(sources, key=lambda e: (size(e), to_source(e)))
     for source in ranked_sources:
         for inst in instances_for(source, outcomes[source]):
             holds, _, _ = check_instance(inst)
-            if holds:
-                holding[inst.mr].append(inst)
-            else:
-                violations.append(inst)
+            (holding if holds else violating)[inst.mr].append(inst)
 
     selected: list[tuple[MRInstance, bool]] = []
     for mr in sorted(holding):
         ranked = sorted(holding[mr], key=_instance_size)
         selected.extend((inst, True) for inst in ranked[:per_mr_hold])
-    ranked_violations = sorted(violations, key=_instance_size)
-    selected.extend((inst, False) for inst in ranked_violations[:max_violations])
+    for mr in sorted(violating):
+        ranked = sorted(violating[mr], key=_instance_size)
+        selected.extend((inst, False) for inst in ranked[:per_mr_violation])
     return selected
 
 
@@ -145,8 +145,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-size", type=int, default=9)
     parser.add_argument("--max-rounds", type=int, default=4)
     parser.add_argument("--cap-per-round", type=int, default=400)
-    parser.add_argument("--per-mr-hold", type=int, default=15)
-    parser.add_argument("--max-violations", type=int, default=15)
+    parser.add_argument("--per-mr-hold", type=int, default=12)
+    parser.add_argument("--per-mr-violation", type=int, default=8)
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT))
     return parser.parse_args()
 
@@ -163,7 +163,7 @@ def main() -> None:
         composition.expressions,
         gt.outcomes,
         per_mr_hold=args.per_mr_hold,
-        max_violations=args.max_violations,
+        per_mr_violation=args.per_mr_violation,
     )
 
     out_dir = Path(args.output_dir)

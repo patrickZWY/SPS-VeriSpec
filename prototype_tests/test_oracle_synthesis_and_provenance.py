@@ -74,7 +74,7 @@ class OracleSynthesisTests(unittest.TestCase):
             )
             proposals = load_oracle_proposals(proposal_path)
             rendered = render_quarantined_oracle_tests(proposals)
-            self.assertIn("pytest.mark.llm_oracle_candidate", rendered)
+            self.assertIn("quarantined LLM oracle candidate", rendered)
             self.assertIn("test_llm_candidate_observes_name", rendered)
 
             entries = build_manifest_entries(candidates, proposals, "test_generated_llm_oracle_candidates.py")

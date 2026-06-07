@@ -53,8 +53,63 @@ relations is what made the bug observable.
 
 Both make `inferLam` agree with `inferLet`.
 
+**Also caught by MR-KPROJ.** The EMI-style K-projection relation (`K e junk` has
+the same type as `e`) independently flags the same 44 expressions: the K
+application re-applies the full substitution to its result, just as `inferLet`
+does. Two independent relations agreeing on the same 44 cases is corroboration.
+
 **Status in this repo.** Not fixed — the oracle is a faithful port and the bug is
 the finding. It is pinned by `tests/test_metamorphic.py::test_dead_let_preserves_type_apply_twice`
 (strict xfail) and documented in the generated suite
 (`test_generated_metamorphic.py`, the xfail-marked cases). A fix to the subject
 checker will flip those to failures and alert us.
+
+## Finding 2 — over-acceptance: the checker accepts ill-typed programs
+
+**Discovered by:** MR-LETLAM (if the application form `(\x.body) v` type-checks,
+the let form `let x=v in body` must too, and the app-form type must be an
+*instance* of the more-general let-form type). Added in the Phase-1.5 batch from
+the related-work scan. 136 violations across the size-9 corpus.
+
+**Confirmed against the original Haskell:**
+
+```
+(\x. (x True) True) (\i. i)        : a   (Python)  /  Just (TVar 0)  (Haskell)
+let x = (\i. i) in (x True) True   : type error   (both)
+```
+
+**Why the application form is wrong.** `x` is bound (monomorphically) to the
+identity `\i.i`, so `x : t -> t`. The body `(x True) True` applies `x` to `True`
+(forcing `t = Bool`, result `Bool`) then applies *that `Bool` result* to `True`
+— applying a `Bool` as a function. The program is ill-typed and must be rejected.
+The checker instead accepts it with a fully general type `a`. This is worse than
+Finding 1: it is **unsoundness** (accepting an ill-typed program), not merely an
+over-general type.
+
+**Relation to Finding 1.** Same defect family: `inferLam` builds the function
+type from a non-idempotent substitution, so a constraint discovered while
+checking the body (here, that the first application's result must itself be a
+function) is left dangling and never enforced against the later binding of the
+same variable. The `let` form re-applies the full substitution and correctly
+rejects the program; the bare application does not. MR-LETLAM exposes the
+acceptance symptom; MR-DEADLET / MR-KPROJ expose the wrong-type symptom.
+
+**Status.** Not fixed (faithful port). Pinned by
+`tests/test_metamorphic.py::test_app_form_should_reject_self_inconsistent_use`
+(strict xfail) and the xfail-marked MR-LETLAM cases in the generated suite.
+
+## Relations added from the related-work scan (Phase 1.5)
+
+From `metamorphic-related-work.md` (full citations there). All three are sound
+and now in the pipeline:
+
+- **MR-CLASH** — type-overwriting mutation, after Chaliasos et al., "Finding
+  Typing Compiler Bugs", PLDI 2022 (doi:10.1145/3519939.3523427). Grafting a
+  closed term of a ground type into a slot unified to a *different* ground type
+  must be rejected. **0 violations / 2,600 applications** — a pure soundness
+  check the checker passes, evidence the relation has no false positives.
+- **MR-KPROJ** — equivalence modulo inputs, after Le, Afshari, Su, PLDI 2014
+  (doi:10.1145/2594291.2594334). Corroborates Finding 1 (44 violations).
+- **MR-LETLAM** — soundness+precision testing, after Kaindlstorfer, Isychev,
+  Wüstholz, Christakis, "Interrogation Testing of Program Analyzers ...", ASE
+  2024 (doi:10.1145/3691620.3695034). Finding 2 (136 violations).

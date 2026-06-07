@@ -1,10 +1,11 @@
 # Current workflow
 
 For a full agent-run evaluation of any target project, follow the protocol in
-`README.md`: run the Python fact baseline, run the Souffle backend, attempt test
-generation, validate generated tests, produce coverage/evaluation reports with
-visualizations, run mutation evaluation when applicable, and report all artifact
-paths and blockers to the user.
+`README.md`: prefer `tools/evaluate_pipeline.py` for a consolidated run, or run
+the Python fact baseline, the Souffle backend, test generation, validation,
+coverage/evaluation, generator semantic-coverage reporting, mutation
+evaluation, and optional invariant/metamorphic/plateau lanes manually when you
+need stage-by-stage inspection.
 
 1. Begin with a Python project such as `CutePetsBoston`.
 
@@ -37,7 +38,25 @@ The current reusable models are:
 - `souffle_static_analysis/dataclass_test_model.dl`
 - `souffle_static_analysis/semantic_model.dl`
 
-The one-command workflow is:
+The preferred one-command workflow is:
+
+```bash
+python3 tools/evaluate_pipeline.py \
+  --target-project CutePetsBoston \
+  --project-name cutepetsboston \
+  --work-dir /tmp/sps-cutepetsboston-eval
+```
+
+Optional flags:
+
+- `--with-static-metamorphic`
+- `--with-invariants --invariant-spec /path/to/call-specs.json`
+- `--with-plateau`
+- `--skip-mutation` for a lighter run
+
+This writes a consolidated Markdown/JSON pipeline report under the work dir.
+
+For direct static-analysis inspection, the lower-level Souffle runner is:
 
 ```bash
 python3 tools/run_static_analysis.py CutePetsBoston --engine souffle --work-dir /tmp/sps-analysis-run
@@ -122,8 +141,11 @@ Generated output:
 ```text
 generated_tests/cutepetsboston/test_generated_dataclass_properties.py
 generated_tests/cutepetsboston/test_generated_dataclass_hypothesis.py
+generated_tests/cutepetsboston/test_generated_dataclass_schema.py
+generated_tests/cutepetsboston/test_generated_dataclass_conversions.py
 generated_tests/cutepetsboston/test_generated_helper_boundaries.py
 generated_tests/cutepetsboston/test_generated_common_ast_properties.py
+generated_tests/cutepetsboston/test_generated_interprocedural_properties.py
 generated_tests/cutepetsboston/README.md
 ```
 
@@ -153,6 +175,21 @@ write quarantined tests to `test_generated_llm_oracle_candidates.py` plus
 (`2 passed` when run oracle-only) and one bounded Transformers promotion
 candidate (`1 passed` when run oracle-only). It did not improve trusted rule
 generation or conservative relation yield.
+
+Structured-output invariant mining is also available as a quarantined lane when
+you can supply replayable call specs:
+
+```bash
+python3 tools/mine_invariants.py \
+  --spec /path/to/call-specs.json \
+  --target-project /path/to/CutePetsBoston \
+  --project-name cutepetsboston \
+  --output-dir generated_tests
+```
+
+That writes quarantined invariant candidates, generated candidate tests, and an
+invariant-candidate report. These are validation inputs, not trusted generated
+tests.
 
 Concrete current output examples:
 
@@ -344,6 +381,18 @@ LLM-oracle run covered `8439/621075` lines (`1.359%`). That 8-line increase is
 real but small, and it comes from a quarantined oracle candidate rather than
 from better LLM-assisted rule generation.
 
+You can also measure generator semantic-family coverage directly:
+
+```bash
+python3 tools/generator_coverage.py \
+  --analysis-dir /tmp/sps-analysis-run \
+  --generated-tests generated_tests/cutepetsboston \
+  --report /tmp/sps-generator-coverage.md
+```
+
+This report measures discovered-vs-emitted relation families and distinguishes
+strict-vs-weak oracle family counts.
+
 9. Run mutation evaluation.
 
 The mutation runner creates a temporary copy of the target checkout, applies
@@ -426,7 +475,9 @@ Priority next steps:
   capitalization, and list-contains. Either replace loose assertions with
   exact equality where the analysis supports it, or report what fraction of
   generated tests have a strict-equality oracle versus a loose one in the
-  evaluation report. Passing rate without oracle strength is not evidence.
+  evaluation report. Semantic family coverage and strict/weak family counts are
+  now reported; per-assertion oracle-strength accounting still needs to become
+  more precise. Passing rate without oracle strength is not evidence.
 - Close the informal-to-formal loop by one step. When a generated test fails,
   surface the Datalog relation that produced it and let a human accept,
   reject, or refine that relation. Persist the decision so accepted relations
@@ -491,8 +542,9 @@ Priority next steps:
 - Add concolic testing experiments that combine concrete execution with
   SAT/SMT solving for branch conditions and numeric/string boundaries.
 - Expand evaluation statistics beyond the current relation-yield, line coverage
-  deltas, and mutation score: branch coverage, dataclass-field coverage,
-  relation coverage, and high-confidence property coverage.
+  deltas, semantic family coverage, and mutation score: branch coverage,
+  dataclass-field coverage, relation coverage, and high-confidence property
+  coverage.
 
 # Potential static-analysis layers
 
