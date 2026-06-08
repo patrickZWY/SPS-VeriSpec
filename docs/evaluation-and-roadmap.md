@@ -33,8 +33,8 @@ Use this when you need a stage-by-stage run instead of the single
 
 The more practical walkthroughs live in:
 
-- [../example.md](../example.md)
-- [../souffle-prototype.md](../souffle-prototype.md)
+- [workflow.md](workflow.md)
+- [extraction-and-souffle.md](extraction-and-souffle.md)
 
 ## Current detailed backlog
 

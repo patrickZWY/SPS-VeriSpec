@@ -105,12 +105,16 @@ The main case studies are:
 ## Repository map
 
 - `souffle_static_analysis/`: trusted static rule backend.
+- `rule_layer/`: experimental LLM rule lane (quarantined).
 - `tools/`: analysis, generation, validation, and evaluation tooling.
 - `prototype_tests/`: tests for the Python tooling.
 - `validation_requirements/`: target-specific disposable validation
   environments.
 - `generated_tests/`: generated artifacts from prior runs.
 - `type_checker_case_study/`: separate case study and its own README.
+- `docs/`: all project documentation (see below).
+- `CutePetsBoston/`, `dacite/`, `transformers/`: vendored sample target
+  projects.
 
 ## Limits
 
@@ -122,17 +126,30 @@ The main case studies are:
 - Large targets may require dependency-specific disposable validation
   environments before generated tests can be judged fairly.
 
-## Further reading
+## Documentation
 
-- [example.md](example.md): practical end-to-end workflow and examples of
-  derived relations becoming tests.
-- [souffle-prototype.md](souffle-prototype.md): lower-level extraction and
-  Souffle workflow.
-- [dataclass-test-generation-layer.md](dataclass-test-generation-layer.md):
-  design notes for the generic dataclass-centered generator.
-- [llm-rule-layer.md](llm-rule-layer.md): guidance for the experimental
+All project documentation lives under [docs/](docs/). Start with the
+[documentation index](docs/index.md), which gives a reading order and a
+topic-by-topic map. Key entries:
+
+- [docs/architecture.md](docs/architecture.md): the single-page mental model —
+  the `facts -> rules -> tests` pipeline, the trusted-vs-quarantined split, and
+  the directory map. The best starting point.
+- [docs/motivation.md](docs/motivation.md): the research vision behind the
+  project (local-only; gitignored).
+- [docs/workflow.md](docs/workflow.md): practical end-to-end workflow and
+  examples of derived relations becoming tests.
+- [docs/extraction-and-souffle.md](docs/extraction-and-souffle.md): lower-level
+  extraction and Souffle workflow.
+- [docs/test-generation.md](docs/test-generation.md): design notes for the
+  generic dataclass-centered generator.
+- [docs/llm-rule-layer.md](docs/llm-rule-layer.md): guidance for the experimental
   LLM-assisted rule lane.
+- [docs/evaluation-and-roadmap.md](docs/evaluation-and-roadmap.md): detailed
+  evaluation protocol, roadmap, and research backlog.
+- [docs/layers/](docs/layers/): per-layer references for the Souffle backend
+  (schema, effect, deduction, semantic).
+- [docs/case-studies/](docs/case-studies/): the CutePetsBoston and type-checker
+  case studies.
 - [type_checker_case_study/README.md](type_checker_case_study/README.md):
-  progressive validated composition case study.
-- [docs/README.md](docs/README.md): detailed evaluation protocol, roadmap, and
-  research backlog.
+  progressive validated composition case study (canonical docs in place).
