@@ -50,6 +50,8 @@ Priority next work:
   family-level strict/weak reporting.
 - Close the feedback loop from failing generated tests back to the originating
   relation so accepted/rejected decisions affect later runs.
+- Use abstract interpretation over Python programs to derive abstract domains,
+  then refine those abstractions into concrete domains for concolic testing.
 
 Still open:
 
