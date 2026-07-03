@@ -14,6 +14,14 @@ Equivalent wrapper:
 bash scripts/run_demo_agent.sh --port 8765
 ```
 
+For a scheduled public walkthrough, use the dedicated SPS tunnel. Do not reuse
+the TLA-Finance tunnel for SPS, because one named tunnel can otherwise route the
+wrong local app behind the other frontdoor.
+
+```bash
+bash scripts/run_demo_tunnel.sh
+```
+
 The public default is deterministic replay. `POST /api/run` accepts only local
 requests and only allowlisted case ids; v1 does not accept arbitrary uploads or
 user-provided project paths.
@@ -74,7 +82,8 @@ promotion.
 This matches the TLA-Finance live-demo pattern:
 
 - local FastAPI service binds to loopback;
-- a Cloudflare tunnel points at the local service during scheduled walkthroughs;
+- the `sps-verispec-demo` Cloudflare tunnel points at the local service during
+  scheduled walkthroughs;
 - the public frontdoor can proxy `sps-demo.zhengwangyuan-patrick.com` to
   `live-sps-demo.zhengwangyuan-patrick.com`;
 - when the tunnel is down, the frontdoor should return an offline page that
