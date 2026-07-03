@@ -38,6 +38,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--invariant-spec")
     parser.add_argument("--with-plateau", action="store_true")
     parser.add_argument("--llm-proposals")
+    parser.add_argument(
+        "--with-local-llm-semantic-assist",
+        action="store_true",
+        help=(
+            "After plateau candidate extraction, ask a local LLM for quarantined "
+            "semantic test proposals and re-render plateau candidates with them."
+        ),
+    )
+    parser.add_argument("--local-llm-provider", choices=("ollama", "openai-compatible"), default="ollama")
+    parser.add_argument("--local-llm-base-url")
+    parser.add_argument("--local-llm-model", default="qwen2.5-coder:7b")
+    parser.add_argument("--local-llm-max-candidates", type=int, default=12)
     parser.add_argument("--report", help="Markdown report path. Defaults to <work-dir>/pipeline_report.md.")
     parser.add_argument("--json-report", help="JSON report path. Defaults to Markdown path with .json suffix.")
     return parser.parse_args()
@@ -248,8 +260,44 @@ def main() -> None:
         if llm_proposals is not None:
             plateau_cmd.extend(["--llm-proposals", str(llm_proposals)])
         steps.append(run_step("llm_plateau", plateau_cmd))
+        if args.with_local_llm_semantic_assist:
+            local_proposals = generated_tests_dir / "local_llm_semantic_proposals.json"
+            local_cmd = [
+                python,
+                str(ROOT / "tools" / "local_llm_semantic_assist.py"),
+                "--input",
+                str(generated_tests_dir / "llm_plateau_input.json"),
+                "--output",
+                str(local_proposals),
+                "--provider",
+                args.local_llm_provider,
+                "--model",
+                args.local_llm_model,
+                "--max-candidates",
+                str(args.local_llm_max_candidates),
+            ]
+            if args.local_llm_base_url:
+                local_cmd.extend(["--base-url", args.local_llm_base_url])
+            local_result = run_step("local_llm_semantic_assist", local_cmd, check=False)
+            steps.append(local_result)
+            if local_result.returncode == 0:
+                rerender_cmd = [
+                    python,
+                    str(ROOT / "tools" / "llm_candidate_generation.py"),
+                    "--analysis-dir",
+                    str(analysis_dir),
+                    "--generated-tests",
+                    str(generated_tests_dir),
+                    "--output-dir",
+                    str(generated_tests_dir),
+                    "--llm-proposals",
+                    str(local_proposals),
+                ]
+                steps.append(run_step("llm_plateau_with_local_proposals", rerender_cmd))
     else:
         steps.append(disabled_step("llm_plateau"))
+        if args.with_local_llm_semantic_assist:
+            steps.append(disabled_step("local_llm_semantic_assist"))
 
     write_reports(report_path, json_report_path, steps)
     print(report_path)

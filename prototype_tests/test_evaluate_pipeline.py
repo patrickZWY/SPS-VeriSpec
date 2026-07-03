@@ -62,6 +62,9 @@ class EvaluatePipelineTests(unittest.TestCase):
                 "--skip-mutation",
                 "--with-static-metamorphic",
                 "--with-plateau",
+                "--with-local-llm-semantic-assist",
+                "--local-llm-model",
+                "qwen-test",
                 "--llm-proposals",
                 str(proposal),
             ]
@@ -81,6 +84,8 @@ class EvaluatePipelineTests(unittest.TestCase):
             self.assertTrue(any("evaluation_stats.py" in command for command in joined))
             self.assertTrue(any("metamorphic_eval_static_analysis.py" in command for command in joined))
             self.assertTrue(any("llm_candidate_generation.py" in command for command in joined))
+            self.assertTrue(any("local_llm_semantic_assist.py" in command for command in joined))
+            self.assertTrue(any("--model qwen-test" in command for command in joined))
 
 
 if __name__ == "__main__":

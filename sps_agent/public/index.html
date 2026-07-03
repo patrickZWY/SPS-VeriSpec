@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SPS-VeriSpec Agent Workbench</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f5;
+      --panel: #ffffff;
+      --ink: #17201c;
+      --muted: #5d6862;
+      --line: #d9dfda;
+      --accent: #0f766e;
+      --accent-2: #b45309;
+      --accent-3: #315f96;
+      --danger: #b42318;
+      --good: #167044;
+      --shadow: 0 14px 40px rgba(23, 32, 28, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, select {
+      font: inherit;
+    }
+    .shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+    }
+    aside {
+      border-right: 1px solid var(--line);
+      background: #fbfcfa;
+      padding: 22px 18px;
+    }
+    .brand {
+      margin: 0 0 18px;
+      font-size: 1rem;
+      line-height: 1.2;
+      font-weight: 760;
+    }
+    .case-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .case-button {
+      width: 100%;
+      min-height: 56px;
+      display: grid;
+      gap: 2px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+    }
+    .case-button[aria-current="true"] {
+      border-color: var(--accent);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .case-button span:first-child {
+      font-weight: 680;
+    }
+    .case-button span:last-child {
+      color: var(--muted);
+      font-size: 0.82rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    main {
+      min-width: 0;
+      padding: 22px;
+    }
+    .topbar {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    h1 {
+      margin: 0 0 4px;
+      font-size: 1.65rem;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    .lede {
+      margin: 0;
+      color: var(--muted);
+      max-width: 78ch;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .button {
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--ink);
+      text-decoration: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .button:disabled {
+      color: var(--muted);
+      cursor: not-allowed;
+      background: #f1f3f0;
+    }
+    .metric-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(110px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .metric {
+      min-height: 72px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    .metric strong {
+      display: block;
+      font-size: 1.35rem;
+      line-height: 1.1;
+    }
+    .metric span {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.75fr);
+      gap: 14px;
+      align-items: start;
+    }
+    .graph-wrap, .detail {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .graph-wrap {
+      min-height: 760px;
+      overflow: auto;
+    }
+    svg {
+      width: 100%;
+      min-width: 1440px;
+      height: 760px;
+      display: block;
+    }
+    .edge {
+      stroke: #8d9b93;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.82;
+    }
+    .edge.pipeline {
+      stroke: var(--accent-3);
+    }
+    .edge.validation-flow {
+      stroke: var(--good);
+    }
+    .edge.review-flow {
+      stroke: var(--accent-2);
+      stroke-dasharray: 6 5;
+    }
+    .edge.active {
+      stroke-width: 4;
+      opacity: 1;
+    }
+    .edge.dimmed,
+    .node.dimmed {
+      opacity: 0.22;
+    }
+    .bus-label, .lane-label {
+      fill: var(--muted);
+      font-size: 12px;
+      font-weight: 680;
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 5px;
+      stroke-linejoin: round;
+    }
+    .lane-label {
+      text-transform: uppercase;
+      letter-spacing: 0;
+      font-size: 11px;
+    }
+    .node rect {
+      fill: #fff;
+      stroke: var(--line);
+      rx: 8;
+    }
+    .node.pipeline rect { stroke: var(--accent-3); }
+    .node.test-family rect { stroke: var(--accent); }
+    .node.validation rect { stroke: var(--good); }
+    .node.finding rect { stroke: var(--accent-2); }
+    .node.active rect {
+      stroke-width: 3;
+      filter: drop-shadow(0 8px 12px rgba(15, 118, 110, 0.18));
+    }
+    .node {
+      cursor: pointer;
+      transition: opacity 140ms ease;
+    }
+    .node text {
+      fill: var(--ink);
+      font-size: 12px;
+      pointer-events: none;
+    }
+    .node .label {
+      font-size: 13px;
+      font-weight: 720;
+    }
+    .node .meta {
+      fill: var(--muted);
+      font-size: 11px;
+    }
+    .detail {
+      min-height: 590px;
+      padding: 16px;
+    }
+    .detail.placeholder {
+      display: grid;
+      align-content: center;
+    }
+    .detail h2 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+    }
+    .detail p {
+      margin: 0 0 12px;
+      color: var(--muted);
+    }
+    .kv {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 10px 0 14px;
+    }
+    .kv div {
+      min-height: 58px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfa;
+    }
+    .kv strong {
+      display: block;
+      font-size: 1.05rem;
+    }
+    .kv span {
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+    }
+    .examples, .artifacts {
+      display: grid;
+      gap: 8px;
+      margin: 10px 0 16px;
+      padding: 0;
+      list-style: none;
+    }
+    .examples li, .artifacts a {
+      display: block;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      text-decoration: none;
+      overflow-wrap: anywhere;
+    }
+    pre {
+      max-height: 250px;
+      overflow: auto;
+      margin: 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #111815;
+      color: #eef6f0;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+    .status {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .focus-note {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    @media (max-width: 980px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+      aside {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .case-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+      .metric-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 560px) {
+      main {
+        padding: 16px;
+      }
+      .topbar {
+        display: grid;
+      }
+      .actions {
+        justify-content: start;
+      }
+      .case-list, .metric-strip, .kv {
+        grid-template-columns: 1fr;
+      }
+      .graph-wrap, .detail {
+        min-height: 430px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <p class="brand">SPS-VeriSpec Agent Workbench</p>
+      <div id="case-list" class="case-list" aria-label="Case studies"></div>
+      <p id="run-status" class="status" role="status"></p>
+    </aside>
+    <main>
+      <div class="topbar">
+        <div>
+          <h1 id="case-title">Loading</h1>
+          <p id="case-summary" class="lede"></p>
+        </div>
+        <div class="actions">
+          <button id="run-live" class="button primary" type="button" disabled>Run live</button>
+          <a class="button" href="/pipeline">Pipeline guide</a>
+          <a id="primary-artifact" class="button" href="#" target="_blank" rel="noreferrer">Report</a>
+        </div>
+      </div>
+      <section id="metrics" class="metric-strip" aria-label="Case metrics"></section>
+      <div class="workspace">
+        <section class="graph-wrap" aria-label="Pipeline graph">
+          <svg id="graph" role="img" aria-labelledby="case-title"></svg>
+        </section>
+        <section id="detail" class="detail" aria-label="Node detail"></section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const state = { cases: [], current: null, selectedNode: null };
+    const graph = document.querySelector("#graph");
+    const detail = document.querySelector("#detail");
+    const statusEl = document.querySelector("#run-status");
+
+    const fmt = (value) => Number(value || 0).toLocaleString();
+
+    async function api(path, options) {
+      const response = await fetch(path, options);
+      if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+      return response.json();
+    }
+
+    function metric(label, value) {
+      return `<div class="metric"><strong>${fmt(value)}</strong><span>${label}</span></div>`;
+    }
+
+    function renderCaseList() {
+      const list = document.querySelector("#case-list");
+      list.innerHTML = state.cases.map((item) => `
+        <button class="case-button" type="button" data-case="${item.id}" aria-current="${state.current?.case.id === item.id}">
+          <span>${item.title}</span>
+          <span>${item.validation.passed} passed, ${item.validation.skipped} skipped</span>
+        </button>
+      `).join("");
+      list.querySelectorAll("button").forEach((button) => {
+        button.addEventListener("click", () => loadCase(button.dataset.case));
+      });
+    }
+
+    const GRAPH = {
+      nodeW: 210,
+      nodeH: 92,
+      top: 96,
+      left: 54,
+      stepX: 280,
+      familyX: 900,
+      resultX: 1180,
+      familyStepY: 132,
+      margin: 72,
+    };
+
+    function centerY(node) {
+      return node.y + GRAPH.nodeH / 2;
+    }
+
+    function rightX(node) {
+      return node.x + GRAPH.nodeW;
+    }
+
+    function edgeWeight(count) {
+      return Math.max(1.5, Math.min(6, Math.log10(Number(count || 1) + 1) * 2.1));
+    }
+
+    function focusIds() {
+      const selectedId = state.selectedNode?.id;
+      if (!selectedId || !state.current) return null;
+      const ids = new Set([selectedId]);
+      state.current.edges.forEach((edge) => {
+        if (edge.source === selectedId) ids.add(edge.target);
+        if (edge.target === selectedId) ids.add(edge.source);
+      });
+      return ids;
+    }
+
+    function edgeIsActive(sourceId, targetId) {
+      const selectedId = state.selectedNode?.id;
+      return selectedId && (selectedId === sourceId || selectedId === targetId);
+    }
+
+    function edgeIsDimmed(sourceId, targetId) {
+      const ids = focusIds();
+      if (!ids) return false;
+      return !ids.has(sourceId) && !ids.has(targetId);
+    }
+
+    function pathSvg(d, className, width, sourceId, targetId) {
+      const active = edgeIsActive(sourceId, targetId) ? " active" : "";
+      const dimmed = edgeIsDimmed(sourceId, targetId) ? " dimmed" : "";
+      return `<path class="edge ${className}${active}${dimmed}" d="${d}" stroke-width="${width}"></path>`;
+    }
+
+    function horizontalEdge(source, target, className, label) {
+      const sy = centerY(source);
+      const tx = target.x;
+      const midX = rightX(source) + (tx - rightX(source)) / 2;
+      return `
+        ${pathSvg(`M ${rightX(source)} ${sy} H ${tx}`, className, 2.4, source.id, target.id)}
+        ${label ? `<text class="bus-label" x="${midX - 34}" y="${sy - 20}">${label}</text>` : ""}
+      `;
+    }
+
+    function wrapLabel(label, maxChars = 22) {
+      const words = String(label).replaceAll("-", "- ").split(/\s+/);
+      const lines = [];
+      let current = "";
+      words.forEach((word) => {
+        const candidate = current ? `${current} ${word}` : word;
+        if (candidate.length > maxChars && current) {
+          lines.push(current.replaceAll("- ", "-"));
+          current = word;
+        } else {
+          current = candidate;
+        }
+      });
+      if (current) lines.push(current.replaceAll("- ", "-"));
+      return lines.slice(0, 2);
+    }
+
+    function nodePosition(node, familyIndex, familyTotal) {
+      const familyCenter = GRAPH.top + ((Math.max(familyTotal, 1) - 1) * GRAPH.familyStepY) / 2 + GRAPH.nodeH / 2;
+      const validationY = Math.max(GRAPH.top, familyCenter - GRAPH.nodeH / 2);
+      const lanes = {
+        target: [GRAPH.left, GRAPH.top],
+        facts: [GRAPH.left + GRAPH.stepX, GRAPH.top],
+        relations: [GRAPH.left + GRAPH.stepX * 2, GRAPH.top],
+        validation: [GRAPH.resultX, validationY],
+        findings: [GRAPH.familyX, GRAPH.top + Math.max(familyTotal, 1) * GRAPH.familyStepY + 32],
+      };
+      if (lanes[node.id]) return lanes[node.id];
+      return [GRAPH.familyX, GRAPH.top + familyIndex * GRAPH.familyStepY];
+    }
+
+    function graphSize(familyNodes, nodeMap) {
+      const findings = nodeMap.get("findings");
+      const familyBottom = GRAPH.top + Math.max(familyNodes.length, 1) * GRAPH.familyStepY + GRAPH.nodeH;
+      const findingBottom = findings ? findings.y + GRAPH.nodeH + GRAPH.margin : 0;
+      return {
+        width: GRAPH.resultX + GRAPH.nodeW + GRAPH.margin,
+        height: Math.max(760, familyBottom + 36, findingBottom),
+      };
+    }
+
+    function renderGraph() {
+      const nodes = state.current.nodes;
+      const familyNodes = nodes.filter((node) => node.kind === "test-family");
+      const nodeMap = new Map();
+      nodes.forEach((node, index) => {
+        const familyIndex = familyNodes.findIndex((candidate) => candidate.id === node.id);
+        const [x, y] = nodePosition(node, familyIndex, familyNodes.length);
+        nodeMap.set(node.id, { ...node, x, y });
+      });
+      const size = graphSize(familyNodes, nodeMap);
+      graph.setAttribute("viewBox", `0 0 ${size.width} ${size.height}`);
+      graph.style.height = `${size.height}px`;
+
+      const edgeByTarget = new Map(state.current.edges.map((edge) => [edge.target, edge]));
+      const target = nodeMap.get("target");
+      const facts = nodeMap.get("facts");
+      const relations = nodeMap.get("relations");
+      const validation = nodeMap.get("validation");
+      const findings = nodeMap.get("findings");
+      const mappedFamilies = familyNodes.map((node) => nodeMap.get(node.id)).filter(Boolean);
+
+      const relationBusX = GRAPH.familyX - 46;
+      const validationBusX = GRAPH.resultX - 42;
+      const familyCenters = mappedFamilies.map(centerY);
+      const edgeParts = [];
+
+      if (target && facts) edgeParts.push(horizontalEdge(target, facts, "pipeline", "extract"));
+      if (facts && relations) edgeParts.push(horizontalEdge(facts, relations, "pipeline", "derive"));
+
+      if (relations && mappedFamilies.length) {
+        const firstY = Math.min(centerY(relations), ...familyCenters);
+        const lastY = Math.max(centerY(relations), ...familyCenters);
+        edgeParts.push(pathSvg(`M ${rightX(relations)} ${centerY(relations)} H ${relationBusX}`, "pipeline", 2.4, "relations", "family-bus"));
+        edgeParts.push(pathSvg(`M ${relationBusX} ${firstY} V ${lastY}`, "pipeline", 2.4, "relations", "family-bus"));
+        edgeParts.push(`<text class="bus-label" x="${relationBusX - 46}" y="${firstY - 28}">relation families</text>`);
+        mappedFamilies.forEach((family) => {
+          const sourceEdge = edgeByTarget.get(family.id) || {};
+          edgeParts.push(pathSvg(
+            `M ${relationBusX} ${centerY(family)} H ${family.x}`,
+            "pipeline",
+            edgeWeight(sourceEdge.count),
+            "relations",
+            family.id,
+          ));
+        });
+      }
+
+      if (validation && mappedFamilies.length) {
+        const emittedFamilies = mappedFamilies.filter((family) => {
+          const metrics = family.metrics || {};
+          return Number(metrics.emitted_tests || 0) > 0;
+        });
+        if (emittedFamilies.length) {
+          const validationY = centerY(validation);
+          const emittedCenters = emittedFamilies.map(centerY);
+          const firstY = Math.min(validationY, ...emittedCenters);
+          const lastY = Math.max(validationY, ...emittedCenters);
+          edgeParts.push(pathSvg(`M ${validationBusX} ${firstY} V ${lastY}`, "validation-flow", 2.4, "validation-bus", "validation"));
+          edgeParts.push(pathSvg(`M ${validationBusX} ${validationY} H ${validation.x}`, "validation-flow", 2.4, "validation-bus", "validation"));
+          edgeParts.push(`<text class="bus-label" x="${validationBusX - 24}" y="${firstY - 28}">pytest</text>`);
+          emittedFamilies.forEach((family) => {
+            const metrics = family.metrics || {};
+            edgeParts.push(pathSvg(
+              `M ${rightX(family)} ${centerY(family)} H ${validationBusX}`,
+              "validation-flow",
+              edgeWeight(metrics.emitted_tests),
+              family.id,
+              "validation",
+            ));
+          });
+        }
+      }
+
+      if (relations && findings) {
+        const reviewBusX = GRAPH.familyX - 72;
+        edgeParts.push(pathSvg(
+          `M ${rightX(relations)} ${centerY(relations)} H ${reviewBusX} V ${centerY(findings)} H ${findings.x}`,
+          "review-flow",
+          2.4,
+          "relations",
+          "findings",
+        ));
+      }
+
+      const laneLabels = `
+        <text class="lane-label" x="${GRAPH.left}" y="30">source</text>
+        <text class="lane-label" x="${GRAPH.left + GRAPH.stepX}" y="30">facts</text>
+        <text class="lane-label" x="${GRAPH.left + GRAPH.stepX * 2}" y="30">relations</text>
+        <text class="lane-label" x="${GRAPH.familyX}" y="30">test families</text>
+        <text class="lane-label" x="${GRAPH.resultX}" y="30">result</text>
+      `;
+
+      const ids = focusIds();
+      const nodeSvg = [...nodeMap.values()].map((node) => {
+        const metrics = node.metrics || {};
+        const line1 = node.kind === "test-family"
+          ? `${fmt(metrics.discovered_relations)} rel -> ${fmt(metrics.emitted_tests)} tests`
+          : node.kind === "validation"
+            ? `${fmt(metrics.passed)} pass / ${fmt(metrics.skipped)} skip`
+            : node.kind === "finding"
+              ? `${fmt(metrics.review_findings)} review`
+              : Object.keys(metrics).slice(0, 1).map((key) => String(metrics[key])).join("");
+        const line2 = node.kind === "test-family"
+          ? `${fmt(metrics.strict_oracles)} strict / ${fmt(metrics.weak_oracles)} weak`
+          : "";
+        const labelLines = wrapLabel(node.label);
+        const focused = ids && ids.has(node.id);
+        const dimmed = ids && !focused ? " dimmed" : "";
+        return `
+          <g class="node ${node.kind} ${state.selectedNode?.id === node.id ? "active" : ""}${dimmed}" data-node="${node.id}" tabindex="0" role="button">
+            <rect x="${node.x}" y="${node.y}" width="${GRAPH.nodeW}" height="${GRAPH.nodeH}"></rect>
+            ${labelLines.map((line, i) => `<text class="label" x="${node.x + 14}" y="${node.y + 22 + i * 15}">${escapeHtml(line)}</text>`).join("")}
+            <text class="meta" x="${node.x + 14}" y="${node.y + 54}">${escapeHtml(line1)}</text>
+            <text class="meta" x="${node.x + 14}" y="${node.y + 70}">${escapeHtml(line2)}</text>
+          </g>
+        `;
+      }).join("");
+
+      graph.innerHTML = laneLabels + edgeParts.join("") + nodeSvg;
+      graph.querySelectorAll(".node").forEach((el) => {
+        el.addEventListener("click", (event) => {
+          event.stopPropagation();
+          selectNode(el.dataset.node);
+        });
+        el.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") selectNode(el.dataset.node);
+        });
+      });
+    }
+
+    function selectNode(id) {
+      state.selectedNode = state.current.nodes.find((node) => node.id === id) || null;
+      renderGraph();
+      renderDetail();
+    }
+
+    function clearFocus() {
+      state.selectedNode = null;
+      renderGraph();
+      renderDetail();
+    }
+
+    function renderDetail() {
+      const node = state.selectedNode;
+      if (!node) {
+        const totals = state.current.metrics.totals;
+        detail.classList.add("placeholder");
+        detail.innerHTML = `
+          <h2>Pipeline overview</h2>
+          <p>Click a node in the graph to focus its immediate inputs and outputs. Details, examples, raw artifacts, and report excerpts stay hidden until a node is selected.</p>
+          <div class="kv">
+            <div><strong>${fmt(totals.discovered_relations)}</strong><span>discovered relations</span></div>
+            <div><strong>${fmt(totals.emitted_tests)}</strong><span>emitted tests</span></div>
+            <div><strong>${fmt(totals.strict_oracles)}</strong><span>strict oracles</span></div>
+            <div><strong>${fmt(totals.review_findings)}</strong><span>review findings</span></div>
+          </div>
+          <p class="focus-note">Click the blank graph background to clear focus after inspecting a node.</p>
+        `;
+        return;
+      }
+      detail.classList.remove("placeholder");
+      const metrics = node.metrics || {};
+      const metricRows = Object.entries(metrics).slice(0, 8).map(([key, value]) => `
+        <div><strong>${typeof value === "number" ? fmt(value) : value}</strong><span>${key.replaceAll("_", " ")}</span></div>
+      `).join("");
+      const examples = (node.examples || []).map((item) => `<li>${item}</li>`).join("");
+      const artifactLinks = state.current.artifacts.slice(0, 8).map((artifact) => `
+        <a href="${artifact.href}" target="_blank" rel="noreferrer">${artifact.label}</a>
+      `).join("");
+      const excerpt = node.kind === "validation" ? state.current.excerpts.validation :
+        node.kind === "test-family" ? state.current.excerpts.generated_tests :
+        state.current.excerpts.analysis;
+      detail.innerHTML = `
+        <h2>${node.label}</h2>
+        <p>${node.detail || state.current.case.summary}</p>
+        <button id="clear-focus" class="button" type="button">Clear focus</button>
+        <div class="kv">${metricRows || "<div><strong>Replay</strong><span>mode</span></div>"}</div>
+        ${examples ? `<h2>Examples</h2><ul class="examples">${examples}</ul>` : ""}
+        <h2>Artifacts</h2>
+        <div class="artifacts">${artifactLinks}</div>
+        <h2>Excerpt</h2>
+        <pre>${escapeHtml(excerpt || "")}</pre>
+      `;
+      detail.querySelector("#clear-focus")?.addEventListener("click", clearFocus);
+    }
+
+    function escapeHtml(text) {
+      return text.replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      }[char]));
+    }
+
+    function renderMetrics() {
+      const totals = state.current.metrics.totals;
+      const validation = state.current.metrics.validation;
+      document.querySelector("#metrics").innerHTML = [
+        metric("discovered relations", totals.discovered_relations),
+        metric("emitted tests", totals.emitted_tests),
+        metric("strict oracles", totals.strict_oracles),
+        metric("weak oracles", totals.weak_oracles),
+        metric("passed validation", validation.passed),
+      ].join("");
+    }
+
+    async function runLive() {
+      if (!state.current?.case.live_enabled) return;
+      statusEl.textContent = "Live run started.";
+      try {
+        const result = await api("/api/run", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ case_id: state.current.case.id, timeout_seconds: 120 }),
+        });
+        statusEl.textContent = result.timed_out
+          ? "Live run timed out; replay remains loaded."
+          : `Live run finished with return code ${result.returncode}.`;
+      } catch (error) {
+        statusEl.textContent = `Live run unavailable: ${error.message}`;
+      }
+    }
+
+    async function loadCase(caseId) {
+      state.current = await api(`/api/cases/${caseId}`);
+      state.selectedNode = null;
+      document.querySelector("#case-title").textContent = state.current.case.title;
+      document.querySelector("#case-summary").textContent = state.current.case.summary;
+      const primary = state.current.artifacts[0];
+      document.querySelector("#primary-artifact").href = primary ? primary.href : "#";
+      const runButton = document.querySelector("#run-live");
+      runButton.disabled = !state.current.case.live_enabled;
+      runButton.title = state.current.case.live_enabled ? "Run allowlisted local pipeline" : "Replay-only case";
+      statusEl.textContent = state.current.case.live_enabled ? "Replay loaded. Local live run is allowlisted." : "Replay-only case loaded.";
+      renderCaseList();
+      renderMetrics();
+      renderGraph();
+      renderDetail();
+    }
+
+    async function init() {
+      document.querySelector("#run-live").addEventListener("click", runLive);
+      graph.addEventListener("click", (event) => {
+        if (!event.target.closest?.(".node")) clearFocus();
+      });
+      state.cases = await api("/api/cases");
+      renderCaseList();
+      await loadCase(state.cases[0].id);
+    }
+
+    init().catch((error) => {
+      statusEl.textContent = `Workbench failed to load: ${error.message}`;
+    });
+  </script>
+</body>
+</html>

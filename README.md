@@ -49,6 +49,22 @@ This writes:
 - `/tmp/sps-myproject-eval/pipeline_report.md`
 - `/tmp/sps-myproject-eval/pipeline_report.json`
 
+For the local visual demo workbench:
+
+```bash
+python3 -m pip install -r requirements-demo.txt
+python3 -m sps_agent.server --host 127.0.0.1 --port 8765
+```
+
+The browser workbench serves checked-in replay cases by default and exposes only
+allowlisted local runs through `POST /api/run`. See
+[docs/agent-workbench.md](docs/agent-workbench.md).
+
+Scheduled local runs can also enable a quarantined local-model semantic-assist
+lane with `--with-plateau --with-local-llm-semantic-assist`, for example with a
+Qwen model served by Ollama. The model writes proposal JSON for review and
+validation; it does not promote tests into the trusted suite by itself.
+
 If you want direct static-analysis output instead of the full orchestrated run:
 
 ```bash
